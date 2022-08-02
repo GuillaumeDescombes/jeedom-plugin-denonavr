@@ -30,18 +30,50 @@
     var tr = '<tr class="cmd" data-cmd_id="' + init(_cmd.id) + '">';
     tr += '<td>';
     tr += '<span class="cmdAttr" data-l1key="id" style="display:none;"></span>';
-    tr += '<span class="type" type="' + init(_cmd.type) + '" style="display:none;">' + jeedom.cmd.availableType() + '</span>';
-    tr += '<span class="subType" subType="' + init(_cmd.subType) + '" style="display:none;"></span>';
-    tr += '<input class="cmdAttr form-control input-sm" data-l1key="name" placeholder="{{Nom}}">';
+    tr += '<div class="row">';
+    tr += '<div class="col-sm-5">';    
+    tr += '<a class="cmdAction btn btn-default btn-sm" data-l1key="chooseIcon"><i class="fas fa-flag"></i> Icone</a>';
+    tr += '<span class="cmdAttr" data-l1key="display" data-l2key="icon" style="margin-left : 10px;"></span>';
+    tr += '</div>';
+    tr += '<div class="col-sm-7">';
+    tr += '<input class="cmdAttr form-control input-sm" data-l1key="name" placeholder="{{Nom}}">';  
+    tr += '</div>';
+    tr += '</div>';  
+    if (init(_cmd.logicalId) !='refresh') {
+      tr += '<select class="cmdAttr form-control input-sm" data-l1key="value" style="display : none;margin-top : 5px;" title="La valeur de la commande vaut par défaut la commande">';
+      tr += '<option value="">Aucune</option>';
+      tr += '</select>';
+    }
+    tr += '</td>';
+
+    tr += '<td>';
+    tr += '<span class="type" type="' + init(_cmd.type) + '" style="">' + jeedom.cmd.availableType() + '</span>';
+    tr += '<span class="subType" subType="' + init(_cmd.subType) + '" style=""></span>';
     tr += '</td>';
     tr += '<td>';
+    tr += '<input class="cmdAttr form-control input-sm" data-l1key="logicalId">';
+    tr += '</td>';
+
+    tr += '<td>';
+    tr += '<input class="cmdAttr form-control input-sm" data-l1key="configuration" data-l2key="eqType" placeholder="{{Categorie}}" >';
+    tr += '</td>';
+
+    tr += '<td>';
+    tr += '<input class="tooltips cmdAttr form-control input-sm" data-l1key="configuration" data-l2key="minValue"  placeholder="{{Min}}" title="{{Min}}" style="width:30%;display:inline-block;">';
+    tr += '<input class="tooltips cmdAttr form-control input-sm" data-l1key="configuration" data-l2key="maxValue" placeholder="{{Max}}" title="{{Max}}" style="width:30%;display:inline-block;">';
+    tr += '<input class="cmdAttr form-control input-sm" data-l1key="unite" placeholder="Unité" title="{{Unité}}" style="width:30%;display:inline-block;margin-left:2px;">';
+    tr += '<input class="tooltips cmdAttr form-control input-sm" data-l1key="configuration" data-l2key="listValue" placeholder="{{Liste de valeur|texte séparé par ;}}" title="{{Liste}}" style="margin-top : 5px;">';
     tr += '<span><label class="checkbox-inline"><input type="checkbox" class="cmdAttr checkbox-inline" data-l1key="isVisible" checked/>{{Afficher}}</label></span> ';
     tr += '<span><label class="checkbox-inline"><input type="checkbox" class="cmdAttr checkbox-inline" data-l1key="isHistorized" checked/>{{Historiser}}</label></span> ';
     tr += '</td>';
+
     tr += '<td>';
     if (is_numeric(_cmd.id)) {
         tr += '<a class="btn btn-default btn-xs cmdAction" data-action="configure"><i class="fas fa-cogs"></i></a> ';
         tr += '<a class="btn btn-default btn-xs cmdAction" data-action="test"><i class="fa fa-rss"></i> {{Tester}}</a>';
+    }
+    if (init(_cmd.logicalId) !='refresh') {
+      tr += '<i class="fa fa-minus-circle pull-right cmdAction cursor" data-action="remove"></i>';
     }
     tr += '</td>';
     tr += '</tr>';
@@ -51,4 +83,19 @@
         $('#table_cmd tbody tr:last .cmdAttr[data-l1key=type]').value(init(_cmd.type));
     }
     jeedom.cmd.changeType($('#table_cmd tbody tr').last(), init(_cmd.subType));
+    var tr = $('#table_cmd tbody tr:last');
+    jeedom.eqLogic.buildSelectCmd({
+      id:  $('.eqLogicAttr[data-l1key=id]').value(),
+      filter: {type: 'info'},
+      error: function (error) {
+        $('#div_alert').showAlert({message: error.message, level: 'danger'});
+      },
+      success: function (result) {
+        tr.find('.cmdAttr[data-l1key=value]').append(result);
+        tr.setValues(_cmd, '.cmdAttr');
+        jeedom.cmd.changeType(tr, init(_cmd.subType));
+        initTooltips();
+      }
+    });
+
 }

@@ -11,13 +11,18 @@ $eqLogics = eqLogic::byType($plugin->getId());
 	<div class="col-xs-12 eqLogicThumbnailDisplay">
 		<legend>{{Gestion}}</legend>
 		<div class="eqLogicThumbnailContainer">
+			<div class="cursor eqLogicAction logoSecondary" data-action="gotoPluginConf">
+				<i class="fas fa-wrench"></i>
+				<br />
+				<span>{{Configuration}}</span>
+			</div>    
 			<div class="cursor eqLogicAction logoPrimary" data-action="add"  >
 				<i class="fas fa-plus-circle"></i>
 				<br>
 				<span >{{Ajouter}}</span>
 			</div>
 		</div>
-		<legend><i class="fas fa-table"></i> {{Mes Denons}}</legend>
+		<legend><i class="fas fa-table"></i> {{Mes Equipements Denon}}</legend>
 		<input class="form-control" placeholder="{{Rechercher}}" id="in_searchEqlogic" />
 		<div class="eqLogicThumbnailContainer">
 			<?php
@@ -116,7 +121,12 @@ $eqLogics = eqLogic::byType($plugin->getId());
 				<table id="table_cmd" class="table table-bordered table-condensed">
 					<thead>
 						<tr>
-							<th>{{Nom}}</th><th>{{Options}}</th><th>{{Action}}</th>
+							<th>{{Nom}}</th>
+              <th>{{Type}}</th>
+              <th>{{Nom logique}}</th>
+              <th>{{Categorie}}</th>
+              <th>{{Options}}</th>
+              <th>{{Action}}</th>
 						</tr>
 					</thead>
 					<tbody>
