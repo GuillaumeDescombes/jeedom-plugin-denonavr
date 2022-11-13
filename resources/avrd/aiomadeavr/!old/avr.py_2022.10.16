@@ -1,0 +1,962 @@
+#!/usr/bin/env python3
+# -*- coding:utf-8 -*-
+#
+# Inspired by https://github.com/silvester747/aio_marantz_avr
+#
+# This is to control Denon/Marantz AVR devices
+#
+# Copyright (c) 2020 François Wautier
+# Copyright (c) 2022 Guillaume Descombes
+#
+# Note large part of this code was taken from scapy and other opensource software
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+# of the Software, and to permit persons to whom the Software is furnished to do so,
+# subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all copies
+# or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+# WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+# IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE
+
+"""Control of an AVR over Telnet."""
+
+import asyncio
+import logging
+import re
+import time
+from enum import Enum
+from typing import Any, List, Mapping, Optional, Callable
+from .enums import *
+
+# Some replacement for the surround sound format
+SSTRANSFORM = [
+    ("Audio-", " "),
+    ("Dd", "Dolby Digital "),
+    ("Hd", "HD "),
+    ("DD", "Dolby Digital "),
+    ("Dts", "DTS"),
+    ["Mstr", "Master "],
+    ("Dsur", "Digital Surround "),
+    ("Mtrx", "Matrix"),
+    ("Dscrt", "Discrete "),
+    ("Mch", "Multi-Channel "),
+    (" Es ", " ES "),
+]
+EXTRAS = ["SSINFAISFSV"]
+NEEDSPACE = ["PSDEL", "PSDYNVOL", "PSDRC"]
+
+
+def cc_string(identifier: str) -> str:
+    """ From https://stackoverflow.com/questions/29916065/how-to-do-camelcase-split-in-python """
+    matches = re.finditer(
+        ".+?(?:(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])|$)", identifier
+    )
+    return " ".join([m.group(0) for m in matches])
+
+
+def only_int(val: str) -> str:
+    return "".join(
+        [x for x in val if x in ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]]
+    )
+
+
+class AvrError(Exception):
+    """Base class for all errors returned from an AVR."""
+
+    pass
+
+
+class AvrTimeoutError(AvrError):
+    """A request to the AVR has timed out."""
+
+    pass
+
+
+async def avr_factory(
+    name: str, serial: str, host: str, port: int = 23, timeout: float = 3.0
+) -> "MDAVR":
+    """Connect to an AVR.
+
+        :param name: The name of this device.
+        :type url: str
+        :param addr: The device IP address
+        :type name: str
+        :returns: A device instance or None if connection cannot be established
+        :rtype: MDAVR
+    """
+    try:
+        future = asyncio.open_connection(host, port=port)
+        reader, writer = await asyncio.wait_for(future, timeout=timeout)
+        return MDAVR(name, serial, reader, writer, timeout)
+    except asyncio.TimeoutError as e:
+        logging.debug("error when connecting to '{}': timeout".format(host))
+        raise AvrTimeoutError("timeout")
+    except Exception as e:
+        logging.debug("error when connecting to {}: {}".format(host, e))
+        return None
+
+def _on_off_from_bool(value: bool) -> str:
+    if value:
+        return "ON"
+    else:
+        return "OFF"
+
+
+def _on_off_to_bool(value: str) -> bool:
+    return value == "ON"
+
+def _list_enum_to_string(myList: Any) -> str:
+    return "["+",".join(["("+x.name+" => "+x.value+")" for x in myList])+"]"
+
+class _CommandDef:
+    code: str
+    label: str
+    zone: Zone
+    values: Optional[Enum]
+
+    def __init__(self, code: str, label: str, zone, vals: Any):
+        self.code = code
+        self.label = label
+        self.values = vals
+        self.zone = zone
+       
+
+
+class MDAVR:
+    """Connection to a Marantz AVR over Telnet.
+
+    Uses `connect` to create a connection to the AVR.
+    """
+
+    CMDS_DEFS: Mapping[str, _CommandDef] = {
+        "PW": _CommandDef("PW", "Main Power", Zone.UndefinedZone, Power),
+        "ZM": _CommandDef("ZM", "Power", Zone.MainZone, Power),
+        "Z2": _CommandDef("Z2", "Power", Zone.Zone2, Power),
+        "Z3": _CommandDef("Z3", "Power", Zone.Zone3, Power),
+        "MU": _CommandDef("MU", "Muted", Zone.MainZone, None),
+        "Z2MU": _CommandDef("Z2MU", "Muted", Zone.Zone2, None),
+        "Z3MU": _CommandDef("Z3MU", "Muted", Zone.Zone3, None),
+        "MV": _CommandDef("MV", "Volume", Zone.MainZone, None),
+        "Z2MV": _CommandDef("Z2MV", "Volume", Zone.Zone2, None),
+        "Z3MV": _CommandDef("Z3MV", "Volume", Zone.Zone3, None),
+        "SI": _CommandDef("SI", "Source", Zone.MainZone, InputSource),
+        "Z2SI": _CommandDef("Z2SI", "Source", Zone.Zone2, InputSource),
+        "Z3SI": _CommandDef("Z3SI", "Source", Zone.Zone2, InputSource),
+        "SV": _CommandDef("SV", "Video Mode", Zone.UndefinedZone, InputSource),
+        "MS": _CommandDef("MS", "Surround Mode", Zone.UndefinedZone, SurroundMode),
+        "CV": _CommandDef("CV", "Channel Bias", Zone.UndefinedZone, ChannelBias),
+        "PV": _CommandDef("PV", "Picture Mode", Zone.UndefinedZone, PictureMode),
+        "ECO": _CommandDef("ECO", "Eco Mode", Zone.UndefinedZone, EcoMode),
+        "SSSOD": _CommandDef("SSSOD", "Available Source", Zone.UndefinedZone, InputSource),
+        "PSDEL": _CommandDef("PSDEL", "Sound Delay", Zone.UndefinedZone, None),
+        "PSDRC": _CommandDef("PSDRC", "Dynamic Range Compression", Zone.UndefinedZone, DRCMode),
+        "PSDYNVOL": _CommandDef("PSDYNVOL", "Dynamic Volume", Zone.UndefinedZone, DynamicMode),
+        # SSANA ? analog inputs
+        # SSHDM ? Mapping between source and HDMI connection
+        # SSDIN ? digital inputs,  COax OPtical
+        # SSSPC ? Speakers' configuration
+        # SSPAA ? Not sure. Active speakers config? Also returns SSSPC
+        # SSQSNZMA ?  Smart select.. what for?
+    }
+
+    _reader: asyncio.StreamReader
+    _writer: asyncio.StreamWriter
+    _timeout: float
+    _lastMessageTime: float
+    _pingFreq: float
+    _timeoutCnt: float
+
+    def __init__(
+        self,
+        name: str,
+        serial: str,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        timeout: float = 3,
+        pingFreq: float = 30
+    ):
+        self.name = name
+        self.serial = serial
+        self._reader = reader
+        self._writer = writer
+        self._timeout = timeout
+        self._pingFreq = pingFreq
+        self.status = {}
+        self.maxvol = 98  # Good default ;)
+        self.alive = True
+        self.write_queue = asyncio.Queue()
+        for x in self.CMDS_DEFS:
+            if len(x) < 5:
+                self.status[self.CMDS_DEFS[x].code] = "-"
+
+        for x in ["PSDEL", "PSDRC", "PSDYNVOL"]:
+            self.status[self.CMDS_DEFS[x].code] = "-"
+
+        self.cvend = True
+        self.notifyCmd = None
+        self.notifyEvent = None
+        self.mysources = []
+        self.mysourcesNotUsed = []
+        self._lastMessageTime = 0
+        self._timeoutCnt = 0
+        # Start reading
+        self.wtask = asyncio.get_event_loop().create_task(self._do_write())
+        self.rtask = asyncio.get_event_loop().create_task(self._do_read())
+        self.ptask = asyncio.get_event_loop().create_task(self._do_ping())
+        self._get_capabilities()
+        self.doRefresh()
+        if self.notifyEvent:
+          self.notifyEvent(self, EventAVR.Init, {})
+
+    def _get_capabilities(self):
+        """
+        Here we try to get the various capabilities of the device connected.
+        """
+        # Let's get the available Sources
+        self.write_queue.put_nowait(("SSSOD", " ?"))
+
+    def _get_current(self, cmd):
+        return self.status[self.CMDS_DEFS[cmd].code]
+
+#    def _get_list(self, cmd):
+#        return [cc_string(x.name) for x in list(self.CMDS_DEFS[cmd].values)]
+
+    def _get_list(self, cmd):
+        return [x for x in list(self.CMDS_DEFS[cmd].values)]
+        
+
+    # API Starts here
+    @property
+    def powerAVR(self) -> Optional[Power]:
+        """Power state of the AVR."""
+        return self._get_current("PW")
+
+    @property
+    def powerZone(self, zone: Zone) -> Optional[Power]:
+        """Power state of the AVR."""
+        if zone== zone.MainZone:
+          return self._get_current("ZM")
+        elif zone == zone.Zone2:
+          return self._get_current("Z2")
+        elif zone == zone.Zone3:
+          return self._get_current("Z3")
+        else: raise AvrError("Unknown Zone") 
+
+
+    @property
+    def muted(self, zone: Zone) -> Optional[bool]:
+        """Boolean if volume is currently muted."""
+        if zone == zone.MainZone:
+          return self._get_current("MU")
+        elif zone == zone.Zone2:
+          return self._get_current("Z2MU")
+        elif zone == zone.Zone3:
+          return self._get_current("Z3MU")
+        else: raise AvrError("Unknown Zone")   
+
+
+    @property
+    def volume(self, zone: Zone) -> Optional[float]:
+        """Volume level of the AVR zone (00..max_volume)."""
+        if zone == zone.MainZone:
+          return self._get_current("MV")
+        elif zone == zone.Zone2:
+          return self._get_current("Z2MV")
+        elif zone == zone.Zone3:
+          return self._get_current("Z2MV")
+        else: raise AvrError("Unknown Zone") 
+        
+
+    @property
+    def maxVolume(self) -> Optional[float]:
+        """Maximum volume level of the AVR zone."""
+        return self.maxvol
+
+    @property
+    def source(self, zone: Zone) -> str:
+        """Name of the current input source."""
+        if zone == zone.MainZone:
+          return self._get_current("SI")
+        elif zone == zone.Zone2:
+          return self._get_current("Z2SI")
+        elif zone == zone.Zone3:
+          return self._get_current("Z3SI")
+        else: raise AvrError("Unknown Zone")         
+        
+    @property
+    def sourceList(self) -> List[str]:
+        """List of available input sources."""
+        if self.mysources:
+            return self.mysources
+        return self._get_list("SI")
+
+    @property
+    def sourceListNotUsed(self) -> List[str]:
+        """List of available input sources."""
+        if self.mysourcesNotUsed:
+            return self.mysourcesNotUsed
+        return []
+
+    @property
+    def soundMode(self) -> str:
+        """Name of the current sound mode."""
+        return self._get_current("MS")
+
+    @property
+    def soundModeList(self) -> List[str]:
+        """List of available sound modes."""
+        return self._get_list("MS")
+
+    @property
+    def pictureMode(self) -> str:
+        """Name of the current sound mode."""
+        return self._get_current("PV")
+
+    @property
+    def pictureModeList(self) -> List[str]:
+        """List of available sound modes."""
+        return self._get_list("PV")
+
+    @property
+    def ecoMode(self) -> str:
+        """Current ECO mode."""
+        return self._get_current("ECO")
+
+    @property
+    def ecoModeList(self) -> List[str]:
+        """List of available exo modes."""
+        return self._get_list("ECO")
+
+    @property
+    def channelsBias(self) -> Mapping[str, float]:
+        return self._get_current("CV")
+
+    @property
+    def channelsBiasList(self) -> List[str]:
+        """List of currently available."""
+        return [x for x in self._get_current("CV").keys()]
+
+    @property
+    def drcMode(self) -> str:
+        """Current ECO mode."""
+        return self._get_current("PSDRC")
+
+    @property
+    def drcModeList(self) -> List[str]:
+        """List of available sound modes."""
+        return self._get_list("PSDRC")
+
+    @property
+    def dynamicVolumeMode(self) -> str:
+        """Current ECO mode."""
+        return self._get_current("PSDYNVOL")
+
+    @property
+    def dynamicVolumeModeList(self) -> List[str]:
+        """List of available sound modes."""
+        return self._get_list("PSDYNVOL")
+
+    @property
+    def delay(self) -> str:
+        """Current ECO mode."""
+        return self._get_current("PSDEL")
+
+    def doRefresh(self) -> None:
+        """Refresh all properties from the AVR."""
+
+        for cmd_def in self.CMDS_DEFS:
+            if cmd_def in NEEDSPACE:
+                qs = " ?"
+            else:
+                qs = "?"
+
+            fut = self.write_queue.put_nowait((cmd_def, qs))
+
+    def doTurnAVROn(self) -> None:
+        """Turn the AVR on."""
+        self.write_queue.put_nowait(("PW", "ON"))
+
+    def doTurnAVROff(self) -> None:
+        """Turn the AVR off."""
+        self.write_queue.put_nowait(("PW", "STANDBY"))
+
+    def doTurnOn(self, zone: Zone) -> None:
+        """Turn the AVR Zone on."""
+        if zone == zone.MainZone:
+          self.write_queue.put_nowait(("ZM", "ON"))
+        elif zone == zone.Zone2:
+          self.write_queue.put_nowait(("Z2", "ON"))
+        elif zone == zone.Zone3:
+          self.write_queue.put_nowait(("Z3", "ON"))
+        else: raise AvrError("Unknown Zone")          
+        
+    def doTurnOff(self, zone: Zone) -> None:
+        """Turn the AVR Zone off."""
+        if zone == zone.MainZone:
+          self.write_queue.put_nowait(("ZM", "OFF"))
+        elif zone == zone.Zone2:
+          self.write_queue.put_nowait(("Z2", "OFF"))
+        elif zone == zone.Zone3:
+          self.write_queue.put_nowait(("Z3", "OFF"))
+        else: raise AvrError("Unknown Zone")         
+        
+    def doMuteVolume(self, zone: Zone, value: bool) -> None:
+        """Mute or unmute the volume of the zone
+
+        Arguments:
+        value -- True to mute, False to unmute.
+        """
+        
+        if zone == zone.MainZone:
+          self.write_queue.put_nowait(("MU", _on_off_from_bool(value)))
+        elif zone == zone.Zone2:
+          self.write_queue.put_nowait(("Z2MU", _on_off_from_bool(value)))
+        elif zone == zone.Zone3:
+          self.write_queue.put_nowait(("Z3MU", _on_off_from_bool(value)))
+        else: raise AvrError("Unknown Zone")              
+        
+    def doSetVolume(self, zone: Zone, value: float) -> None:
+        """Set the volume level.
+
+        Arguments:
+        value -- An integer value between 0 and `max_volume`.
+        """
+        if value > self.maxvol:
+            value = maxvol
+        if int(10 * value) % 10:
+            # Needs to be a nultiple of 5
+            value = int(5 * round(10 * value / 5))
+        else:
+            value = int(value)
+            
+        if zone == zone.MainZone:
+          self.write_queue.put_nowait(("MV", f"{value:02}"))
+        elif zone == zone.Zone2:
+          self.write_queue.put_nowait(("Z2", f"{value:02}"))
+        elif zone == zone.Zone3:
+          self.write_queue.put_nowait(("Z3", f"{value:02}"))
+        else: raise AvrError("Unknown Zone")  
+        
+    def doVolumeUp(self, zone: Zone) -> None:
+        """Turn the volume level up one notch."""
+        
+        if zone == zone.MainZone:
+          self.write_queue.put_nowait(("MV", "UP"))
+        elif zone == zone.Zone2:
+          self.write_queue.put_nowait(("Z2", "UP"))
+        elif zone == zone.Zone3:
+          self.write_queue.put_nowait(("Z3", "UP"))
+        else: raise AvrError("Unknown Zone")          
+        
+    def doVolumeDown(self, zone: Zone) -> None:
+        """Turn the volume level down one notch."""
+        
+        if zone == zone.MainZone:
+          self.write_queue.put_nowait(("MV", "DOWN"))
+        elif zone == zone.Zone2:
+          self.write_queue.put_nowait(("Z2", "DOWN"))
+        elif zone == zone.Zone3:
+          self.write_queue.put_nowait(("Z3", "DOWN"))
+        else: raise AvrError("Unknown Zone")   
+        
+    def doSetChannelBias(self, value) -> None:
+        """Set the volume level.
+
+        Arguments:
+        value  -- chan: channel to set; level:a float value between -12.0 and +12.0
+        """
+        
+        #todo 
+        
+        chan = value["chan"]
+        level = value["level"]
+        if chan not in self.channels_bias:
+            logging.warning(f"Channel {chan} is not available right now.")
+            return
+
+        if self.channels_bias[chan] != level:
+            chan = chan.replace(" ", "")
+            level = level + 50  # 50 is 0dB
+            if level < 38:
+                level = 38
+            elif level > 62:
+                level = 62
+            if int(10 * level) % 10:
+                # Needs to be a nultiple of 5
+                level = int(5 * round(10 * level / 5))
+            else:
+                level = int(level)
+
+            cmd = None
+            for x in self.CMDS_DEFS["CV"].values:
+                if x.name == chan:
+                    cmd = x.value
+                    break
+            if cmd:
+                self.write_queue.put_nowait(("CV", f"{cmd} {level:02}"))
+            else:
+                logging.error(
+                    f"Channel {chan} should exist. This should not have happened."
+                )
+         
+    def doChannelBiasUp(self, value: str) -> None:
+        """Turn the volume level up one notch."""
+        
+        if value not in self.channels_bias:
+            logging.warning(f"Channel {value} is not available right now.")
+            return
+        if self.channels_bias[value] == 12:
+            # We are at the limit. It won't respond
+            logging.debug(f"Channel {value} it at the upper limit.")
+            return
+
+        value = value.replace(" ", "")
+        cmd = None
+        for x in self.CMDS_DEFS["CV"].values:
+            if x.name == value:
+                cmd = x.value
+                break
+        if cmd:
+            self.write_queue.put_nowait(("CV", f"{cmd} UP"))
+        else:
+            logging.error(
+                f"Channel {value} should exist. This should not have happened."
+            )
+
+    def doChannelBiasDown(self, value: str) -> None:
+        """Turn the volume level down one notch."""
+        
+        if value not in self.channels_bias:
+            logging.warning(f"Channel {value} is not available right now.")
+            return
+        if self.channels_bias[value] == -12:
+            # We are at the limit. It won't respond
+            logging.debugf(f"Channel {value} it at the lowewr limit.")
+            return
+
+        value = value.replace(" ", "")
+        cmd = None
+        for x in self.CMDS_DEFS["CV"].values:
+            if x.name == value:
+                cmd = x.value
+                break
+        if cmd:
+            self.write_queue.put_nowait(("CV", f"{cmd} DOWN"))
+        else:
+            logging.error(
+                f"Channel {value} should exist. This should not have happened."
+            )
+
+    def doChannelsBiasReset(self):
+        self.write_queue.put_nowait(("CV", "ZRL"))
+
+    def doSelectSource(self, zone: Zone, value: str) -> None:
+        """Select the input source."""
+        
+        try:
+            source = self.CMDS_DEFS["SI"].values[value.replace(" ", "")]
+        except:
+            logging.warning(f"Warning: {value} is not a valid source")
+            return
+        if zone == zone.MainZone:
+          self.write_queue.put_nowait(("SI", source.value))
+        elif zone == zone.Zone2:
+          self.write_queue.put_nowait(("Z2", source.value))
+        elif zone == zone.Zone3:
+          self.write_queue.put_nowait(("Z3", source.value))
+        else: raise AvrError("Unknown Zone")               
+        
+    def doSelectSoundMode(self, value: str) -> None:
+        """Select the sound mode."""
+        
+        try:
+            mode = self.CMDS_DEFS["MS"].values[value.replace(" ", "")]
+        except:
+            logging.warning(f"Warning: {value} is not a valid sound mode")
+            return
+        self.write_queue.put_nowait(("MS", mode.value))
+
+    def doSelectPictureMode(self, value: str) -> None:
+        """Select the picture mode."""
+        
+        try:
+            mode = self.CMDS_DEFS["PV"].values[value.replace(" ", "")]
+        except:
+            logging.warning(f"Warning: {value} is not a valid picture mode")
+            return
+        self.write_queue.put_nowait(("PV", mode.value))
+
+    def doSelectEcoMode(self, value: str) -> None:
+        """Select the echo mode."""
+        
+        try:
+            mode = self.CMDS_DEFS["ECO"].values[value.replace(" ", "").title()]
+        except:
+            logging.warning(f"Warning: {value} is not a valid eco mode")
+            return
+        self.write_queue.put_nowait(("ECO", mode.value))
+
+    def doSetDelay(self, value: float) -> None:
+        """Set the volume delay.
+
+        Arguments:
+        value -- An integer value between 0 and `max_volume`.
+        """
+        
+        value = int(value)
+        if value < 0:
+            value = 0
+        if value > 999:
+            value = 999
+        self.write_queue.put_nowait(("PSDEL", f" {value:03}"))
+
+    def doSelectDRCMode(self, value: str) -> None:
+        """Select the drc mode."""
+        
+        try:
+            mode = self.CMDS_DEFS["PSDRC"].values[value.replace(" ", "").title()]
+        except:
+            logging.warning(f"Warning: {value} is not a valid DRC mode")
+            return
+        self.write_queue.put_nowait(("PSDRC", " " + mode.value))
+
+    def doSelectDynamicVolumeMode(self, value: str) -> None:
+        """Select the sound mode."""
+        
+        try:
+            mode = self.CMDS_DEFS["PSDYNVOL"].values[value.replace(" ", "").title()]
+        except:
+            logging.warning(f"Warning: {value} is not a valid Dynamic Volume mode")
+            return
+        self.write_queue.put_nowait(("PSDYNVOL", " " + mode.value))
+
+    def notifyme(self, funcCmd: Callable, funcEvent:Callable) -> None:
+        """Register a callback for when a command or an event happens.
+        """
+        
+        if funcCmd:
+            self.notifyCmd = funcCmd
+        if funcEvent:
+            self.notifyEvent = funcEvent        
+       
+    def close(self):
+        self.alive = False
+        self._writer.close()
+        self.rtask.cancel()
+        self.wtask.cancel()
+        self.ptask.cancel()
+        logging.debug(f"Closed device '{self.name}'")
+        if self.notifyEvent:
+          self.notifyEvent(self, EventAVR.Close, {})        
+
+    def timeout(self) -> bool:
+        logging.debug(f"Timeout #{self._timeoutCnt}...")
+        if self.notifyEvent:
+          self.notifyEvent(self, EventAVR.Timeout, {})
+        self.close()
+        return True
+
+    # API ends here
+
+    async def _send_command(self, cmd: str, val: Any) -> asyncio.Future:
+        tosend = f"{cmd}{val}\r"
+        logging.debug(f"Sending {tosend}")
+        self._writer.write(tosend.encode())
+        await self._writer.drain()
+        logging.debug("Write drained")
+
+    def _process_response(self, response: str) -> Optional[str]:
+        matches = [cmd for cmd in self.CMDS_DEFS.keys() if response.startswith(cmd)] + [
+            cmd for cmd in EXTRAS if response.startswith(cmd)
+        ]
+
+        if not matches:
+
+            return None
+
+        if len(matches) > 1:
+            matches.sort(key=len, reverse=True)
+        match = matches[0]
+
+        if getattr(self, "_parse_" + match, None):
+            getattr(self, "_parse_" + match)(response.strip()[len(match) :].strip())
+        else:
+            # A few special cases ... for now
+            if response.startswith("SSINFAISFSV"):
+                try:
+                    sr = int(only_int(response.split(" ")[-1]))
+                    if sr > 200:
+                        sr = round(sr / 10, 1)
+                    else:
+                        sr = float(sr)
+                    self.status["Sampling Rate"] = sr
+                except Exception as e:
+                    if response.split(" ")[-1] == "NON":
+                        self.status["Sampling Rate"] = "-"
+                    else:
+                        logging.debug(f"Error with sampling rate: {e}")
+            else:
+                #logging.debug(f"Warning _parse_{match} is not defined; using _parse_many...")
+                self._parse_many(match, response.strip()[len(match) :].strip())
+
+        return match
+
+    def _parse_many(self, cmd: str, resp: str) -> None:
+        for x in self.CMDS_DEFS[cmd].values:
+            if resp == x.value:
+                code = self.CMDS_DEFS[cmd].code
+#                if self.status[code] != cc_string(x.name):
+#                    self.status[code] = cc_string(x.name)
+                if self.status[code] != x:
+                    self.status[code] = x
+                if self.notifyCmd:
+                    self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code].value)
+
+    def _parse_MV(self, resp: str) -> None:
+        level = only_int(resp)
+        cmd="MV"
+        if level:
+            if len(level) > 2:
+                level = int(level) / 10
+            else:
+                level = float(level)
+
+            if resp.startswith("MAX"):
+                self.maxvol = level
+                logging.debug(f"Set maxvol to {level}")
+            else:
+                code = self.CMDS_DEFS[cmd].code
+                if self.status[code] != level:
+                    self.status[code] = level
+                if self.notifyCmd:
+                    self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])
+
+    def _parse_MU(self, resp: str) -> None:
+        nval = resp == "ON"
+        cmd="MU"
+        code = self.CMDS_DEFS[cmd].code
+        if self.status[code] != nval:
+            self.status[code] = nval
+        if self.notifyCmd:
+            self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])
+
+    def _parse_Z2MU(self, resp: str) -> None:
+        nval = resp == "ON"
+        cmd="Z2MU"
+        code = self.CMDS_DEFS[cmd].code
+        if self.status[code] != nval:
+            self.status[code] = nval
+        if self.notifyCmd:
+            self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])
+
+    def _parse_Z3MU(self, resp: str) -> None:
+        nval = resp == "ON"
+        cmd="Z3MU"
+        code = self.CMDS_DEFS[cmd].code
+        if self.status[code] != nval:
+            self.status[code] = nval
+        if self.notifyCmd:
+            self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])
+
+    def _parse_zone(self, zone: str, resp: str) -> None:
+        """ Naturaly, those idiots had tn  overload the zone prefix for
+        power, volume and source...
+        """
+        if resp in ["ON", "OFF"]:
+            self._parse_many(zone, resp)
+            return
+
+        if resp.startswith("SMART"):
+            # not handled
+            return
+
+        if resp.startswith("FAVORITE"):
+            # not handled, learn to spell!
+            return
+
+        try:            
+            level = only_int(resp)
+            if len(level) > 2:
+                level = int(level) / 10
+            else:
+                level = float(level)
+            logging.debug(f"Checking level for {zone}")
+            cmd=zone + "MV"
+            code = self.CMDS_DEFS[cmd].code
+            if self.status[code] != level:
+                self.status[code] = level
+            if self.notifyCmd:
+                self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])
+        except:
+            # Probably the source
+            try:
+                logging.debug(f"Checking source for {zone}")
+                self._parse_many(zone + "SI", resp)
+            except Exception as e:
+                logging.debug(f"Failed when parsing {zone}: {e}")
+
+    def _parse_Z2(self, resp: str) -> None:
+        self._parse_zone("Z2", resp)
+
+    def _parse_Z3(self, resp: str) -> None:
+        self._parse_zone("Z3", resp)
+
+    def _parse_CV(self, resp: str) -> None:
+        """ Different here... Needs to be reset"""
+        cmd="CV"
+        if resp == "END":
+            self.cvend = True
+            if self.notifyCmd:
+                code = self.CMDS_DEFS[cmd].code
+                #self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])
+                valtobenotified={}
+                for x in self.status[code]:
+                  valtobenotified[x.value]=self.status[code][x]
+                self.notifyCmd(self, self.CMDS_DEFS[cmd], valtobenotified)
+                
+        else:
+            if self.cvend:
+                self.status[self.CMDS_DEFS[cmd].code] = {}
+                self.cvend = False
+            
+            spkr, level = resp.split(" ")
+                
+            if level:
+                if len(level) > 2:
+                    level = int(level) / 10
+                else:
+                    level = float(level)
+            level -= 50
+            for x in self.CMDS_DEFS[cmd].values:
+                if x.value == spkr:
+#                    spkrname = cc_string(x.name)
+                    spkrname = x
+                    break
+            try:
+                self.status[self.CMDS_DEFS[cmd].code][spkrname] = level
+            except:
+                logging.debug(f"Unknown speaker code {spkr}")
+
+    def _parse_SSSOD(self, resp: str) -> None:
+        """ Different here..."""
+        #logging.debug(f"_parse_SSSOD({resp})")
+        #GDE BUG correction
+        cmd="SSSOD"
+        if resp == "END":
+            #self.mysources.sort()
+            #self.mysourcesNotUsed.sort()
+            logging.debug(f"My source is now {_list_enum_to_string(self.mysources)}")
+            if self.notifyCmd:
+                self.notifyCmd(self, self.CMDS_DEFS[cmd], [x.value for x in self.mysources])            
+            logging.debug(f"My source (not used) is now {_list_enum_to_string(self.mysourcesNotUsed)}")
+            return
+        si, f = resp.split(" ")
+        if f == "USE":
+            for x in self.CMDS_DEFS[cmd].values:
+                if si == x.value:
+#                    self.mysources.append(cc_string(x.name))
+                    self.mysources.append(x)
+                    logging.debug(f"Adding source {x}")
+                    break
+        if f == "DEL":
+            for x in self.CMDS_DEFS[cmd].values:
+                if si == x.value:
+                    self.mysourcesNotUsed.append(x)
+                    logging.debug(f"Adding NOT USED source {x}")
+                    break
+
+
+    def _parse_MS(self, resp: str) -> None:
+        """ Different here... What we get is not what we send. So we try to transform
+        the result through semi-cllever string manipulation
+        """
+        cmd="MS"
+        resp = resp.replace("+", " ")
+        resp = " ".join([x.title() for x in resp.split(" ")])
+        for old, new in SSTRANSFORM:
+            resp = resp.replace(old, new)
+        # Clean up spaces
+        resp = re.sub(r"[_\W]+", " ", resp)
+        code = self.CMDS_DEFS[cmd].code
+        if self.status[code] != resp:
+            self.status[code] = resp
+        if self.notifyCmd:
+            self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])
+
+    def _parse_PSDEL(self, resp: str) -> None:
+        level = only_int(resp)
+        cmd="PSDEL"
+        if level:
+            level = int(level)
+            code = self.CMDS_DEFS["PSDEL"].code
+            if self.status[code] != level:
+                self.status[code] = level
+            if self.notifyCmd:
+                self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])
+
+    async def _do_read(self):
+        """ Keep on reading the info coming from the AVR"""
+
+        while self.alive:
+            data = b""
+            while not data or data[-1] != ord("\r"):
+                char = await self._reader.read(1)
+                if char == b"":
+                    break
+                data += char
+
+            if data == b"":
+                # Gone
+                self.close()
+                return
+
+            logging.debug(f"Received: {data}")
+            self._lastMessageTime=time.time()
+            try:
+                match = self._process_response(data.decode().strip("\r"))
+            except Exception as e:
+                logging.debug("Problem processing response: {} - {}".format(e, data.decode().strip("\r")))
+
+    async def _do_write(self):
+        """ Keep on reading the info coming from the AVR"""
+
+        while self.alive:
+            cmd, param = await self.write_queue.get()
+            if cmd:
+                await self._send_command(cmd, param)
+            self.write_queue.task_done()
+
+    async def _do_ping(self):
+        """ Send a ping to the AVR every _pingFreq s"""
+        while self.alive:
+            try:
+                logging.debug("Send ping ...")
+                self.write_queue.put_nowait(("PW", "?"))
+                if self.notifyEvent:
+                  self.notifyEvent(self, EventAVR.Ping, {})                
+                await asyncio.sleep(self._timeout)
+                #check timeout
+                delayLastMessage = time.time() - self._lastMessageTime
+                logging.debug(f"Last message received {delayLastMessage:.2f}s ago")
+                if delayLastMessage>self._timeout:
+                    self._timeoutCnt=self._timeoutCnt+1
+                    if self.timeout():
+                        return
+                else:
+                    self._timeoutCnt=0 
+                await asyncio.sleep(self._pingFreq - self._timeout)                    
+            except asyncio.CancelledError as e:
+                return
+            except Exception as e:
+                logging.debug("Problem processing ping: {} - {}".format(e, e.__class__.__name__))    
+                await asyncio.sleep(self._pingFreq)
+  

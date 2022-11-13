@@ -12,6 +12,9 @@
     "author": "Loïc",
     "require": "3.0",
     "category": "multimedia",
+    "hasDependency" : true,
+    "hasOwnDeamon" : true,
+    "maxDependancyInstallTime" : 0,    
     "changelog": "https:\/\/doc.jeedom.com\/#language#\/plugins\/multimedia\/denonavr\/changelog",
     "documentation": "https:\/\/doc.jeedom.com\/#language#\/plugins\/multimedia\/denonavr\/",
     "language": [

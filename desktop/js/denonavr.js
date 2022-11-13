@@ -15,7 +15,6 @@
  * along with Jeedom. If not, see <http://www.gnu.org/licenses/>.
  */
 
-
  $("#table_cmd").sortable({axis: "y", cursor: "move", items: ".cmd", placeholder: "ui-state-highlight", tolerance: "intersect", forcePlaceholderSize: true});
 /*
  * Fonction pour l'ajout de commande, appellé automatiquement par plugin.template
@@ -28,6 +27,7 @@
         _cmd.configuration = {};
     }
     var tr = '<tr class="cmd" data-cmd_id="' + init(_cmd.id) + '">';
+    
     tr += '<td>';
     tr += '<span class="cmdAttr" data-l1key="id" style="display:none;"></span>';
     tr += '<div class="row">';
@@ -50,37 +50,52 @@
     tr += '<span class="type" type="' + init(_cmd.type) + '" style="">' + jeedom.cmd.availableType() + '</span>';
     tr += '<span class="subType" subType="' + init(_cmd.subType) + '" style=""></span>';
     tr += '</td>';
+    
     tr += '<td>';
     tr += '<input class="cmdAttr form-control input-sm" data-l1key="logicalId">';
     tr += '</td>';
 
     tr += '<td>';
-    tr += '<input class="cmdAttr form-control input-sm" data-l1key="configuration" data-l2key="eqType" placeholder="{{Categorie}}" >';
+    //tr += '<input class="cmdAttr form-control input-sm" data-l1key="configuration" data-l2key="eqType" placeholder="{{Catégorie}}" >';
+   	tr += '<select class="cmdAttr form-control input-sm" data-l1key="configuration" data-l2key="eqType">';
+		tr += '<option value="input">{{Source}}</option>';
+    tr += '<option value="sound">{{Audio}}</option>';
+    tr += '<option value="volume">{{Volume Sonore}}</option>';
+    tr += '<option value="power">{{Alimentation}}</option>';
+    tr += '<option value="tuner">{{Radio}}</option>';
+    tr += '<option value="other">{{Autre}}</option>';
+    tr += '</select>';
     tr += '</td>';
 
-    tr += '<td>';
-    tr += '<input class="tooltips cmdAttr form-control input-sm" data-l1key="configuration" data-l2key="minValue"  placeholder="{{Min}}" title="{{Min}}" style="width:30%;display:inline-block;">';
-    tr += '<input class="tooltips cmdAttr form-control input-sm" data-l1key="configuration" data-l2key="maxValue" placeholder="{{Max}}" title="{{Max}}" style="width:30%;display:inline-block;">';
-    tr += '<input class="cmdAttr form-control input-sm" data-l1key="unite" placeholder="Unité" title="{{Unité}}" style="width:30%;display:inline-block;margin-left:2px;">';
+    tr += '<td>'
+    tr += '<label class="checkbox-inline"><input type="checkbox" class="cmdAttr" data-l1key="isVisible" checked/>{{Afficher}}</label> '
+    tr += '<label class="checkbox-inline"><input type="checkbox" class="cmdAttr" data-l1key="isHistorized" checked/>{{Historiser}}</label> '
+    tr += '<label class="checkbox-inline"><input type="checkbox" class="cmdAttr" data-l1key="display" data-l2key="invertBinary"/>{{Inverser}}</label> '
+    tr += '<div style="margin-top:7px;">'
+    tr += '<input class="tooltips cmdAttr form-control input-sm" data-l1key="configuration" data-l2key="minValue" placeholder="{{Min}}" title="{{Min}}" style="width:30%;max-width:80px;display:inline-block;margin-right:2px;">'
+    tr += '<input class="tooltips cmdAttr form-control input-sm" data-l1key="configuration" data-l2key="maxValue" placeholder="{{Max}}" title="{{Max}}" style="width:30%;max-width:80px;display:inline-block;margin-right:2px;">'
+    tr += '<input class="tooltips cmdAttr form-control input-sm" data-l1key="unite" placeholder="Unité" title="{{Unité}}" style="width:30%;max-width:80px;display:inline-block;margin-right:2px;">'
     tr += '<input class="tooltips cmdAttr form-control input-sm" data-l1key="configuration" data-l2key="listValue" placeholder="{{Liste de valeur|texte séparé par ;}}" title="{{Liste}}" style="margin-top : 5px;">';
-    tr += '<span><label class="checkbox-inline"><input type="checkbox" class="cmdAttr checkbox-inline" data-l1key="isVisible" checked/>{{Afficher}}</label></span> ';
-    tr += '<span><label class="checkbox-inline"><input type="checkbox" class="cmdAttr checkbox-inline" data-l1key="isHistorized" checked/>{{Historiser}}</label></span> ';
-    tr += '</td>';
-
+    tr += '</div>'
+    tr += '</td>'
+    
     tr += '<td>';
+    tr += '<span class="cmdAttr" data-l1key="htmlstate"></span>'; 
+    tr += '</td>';    
+
+tr += '<td>';
     if (is_numeric(_cmd.id)) {
         tr += '<a class="btn btn-default btn-xs cmdAction" data-action="configure"><i class="fas fa-cogs"></i></a> ';
         tr += '<a class="btn btn-default btn-xs cmdAction" data-action="test"><i class="fa fa-rss"></i> {{Tester}}</a>';
     }
-    if (init(_cmd.logicalId) !='refresh') {
-      tr += '<i class="fa fa-minus-circle pull-right cmdAction cursor" data-action="remove"></i>';
-    }
+    tr += '<i class="fa fa-minus-circle pull-right cmdAction cursor" data-action="remove"></i>';
     tr += '</td>';
+    
     tr += '</tr>';
     $('#table_cmd tbody').append(tr);
     $('#table_cmd tbody tr').last().setValues(_cmd, '.cmdAttr');
     if (isset(_cmd.type)) {
-        $('#table_cmd tbody tr:last .cmdAttr[data-l1key=type]').value(init(_cmd.type));
+      $('#table_cmd tbody tr:last .cmdAttr[data-l1key=type]').value(init(_cmd.type));
     }
     jeedom.cmd.changeType($('#table_cmd tbody tr').last(), init(_cmd.subType));
     var tr = $('#table_cmd tbody tr:last');
@@ -97,5 +112,40 @@
         initTooltips();
       }
     });
-
 }
+
+$('#bt_updateInfo').off('click').on('click', function () {
+  ip = $('.eqLogicAttr[data-l1key=configuration][data-l2key=ip]').value();
+  jeedom.denonavr.getDescription({
+        ip : ip,
+        error: function (error) {
+          $('#div_alert').showAlert({message: error.message, level: 'danger'});
+        },
+        success: function (data) {
+          console.log(data);
+          $('#div_alert').showAlert({message: "L'équiment a été trouvé", level: 'success',ttl:10000});
+          if (data.serialNumber) {
+            $('.eqLogicAttr[data-l1key=configuration][data-l2key=serial]').value(data.serialNumber);
+          }
+          if (data.friendlyName) {
+            $('.eqLogicAttr[data-l1key=name]').value(data.friendlyName);
+          }
+          if (data.manufacturer) {
+            $('.eqLogicAttr[data-l1key=configuration][data-l2key=manufacturer]').value(data.manufacturer);
+          }          
+        }
+      });
+});
+
+$('#bt_createCommands').off('click').on('click', function () {
+  id = $('.eqLogicAttr[data-l1key=id]').value();
+  jeedom.denonavr.createCommands({
+        id : id,
+        error: function (error) {
+          $('#div_alert').showAlert({message: error.message, level: 'danger'});
+        },
+        success: function (data) {
+          $('#div_alert').showAlert({message: "Les commandes ont été créées", level: 'success',ttl:10000});
+        }
+      });
+});
