@@ -153,7 +153,10 @@ class devices:
             else:
                 logging.debug(f"Device {info} has been unregistered. Cancelling task.")
                 return
-            await aio.sleep(self.cycle)
+            try:    
+                await aio.sleep(self.cycle)
+            except aio.CancelledError as e:
+                return    
             
     def stop(self):
         for dev in self.devices.values():
@@ -195,74 +198,80 @@ def shutdown():
     
 
 async def main():
-  global MyDevices
-  global jeedomSocket
-  global jeedomCom
-  global _cycle
-  global _cycleConnect
-  global _log_level
-  global _watchDogTimer
-  global JEEDOM_SOCKET_MESSAGE
+    global MyDevices
+    global jeedomSocket
+    global jeedomCom
+    global _cycle
+    global _cycleConnect
+    global _log_level
+    global _watchDogTimer
+    global JEEDOM_SOCKET_MESSAGE
   
-  MyDevices = devices(_cycleConnect, _log_level=="debug")
+    MyDevices = devices(_cycleConnect, _log_level=="debug")
   
-  logging.debug("Start listening...")
-  jeedomSocket.open()
-  jeedomCom.send_change_immediate({"daemon": {'event' : 'Listening'}})
-  #jeedomCom.add_changes("daemon", {'event' : 'Listening'})
-  await aio.sleep(5)
-  
-  #listInfo = {"name":"my Denon", "ip":"192.168.128.188", "serial":"1234"}
-  #MyDevices.register(listInfo)
-  
-  cpt=0
-  while True:
-    await aio.sleep(_cycle)
+    logging.debug("Start listening...")
+    jeedomSocket.open()
+    jeedomCom.send_change_immediate({"daemon": {'event' : 'Listening'}})
+    #jeedomCom.add_changes("daemon", {'event' : 'Listening'})
     try:
-        if not JEEDOM_SOCKET_MESSAGE.empty():
-            logging.debug("Message received in socket JEEDOM_SOCKET_MESSAGE")
-            jsonMessage=JEEDOM_SOCKET_MESSAGE.get()
-            logging.debug(f"message {jsonMessage}")
-            message = json.loads(jsonMessage)
-            if message['apikey'] != _apikey:
-                logging.error("Invalid apikey from socket : " + str(message))
-            else: 
-                # do the action
-                # Register/Unregister
-                if message['action'] == "register":
-                    newDeviceInfo = {"name":message['name'], "ip":message['ip'], "serial":message['serial']}
-                    MyDevices.register(newDeviceInfo)
-                if message['action'] == "unregister":
-                    MyDevices.unregister(message['serial'])
-                if message['action'] == "unregisterAll":
-                    MyDevices.unregisterAll() 
-                # action to device
-                if message['action'] == "doDevice":
-                    serial = message['serial']
-                    deviceAction = message['deviceAction']
-                    zone = avrEnums.Zone.UndefinedZone
-                    if 'zone' in message:
-                        if message['zone'] == "main" or message['zone'] ==1:
-                            zone = avrEnums.Zone.MainZone
-                        if message['zone'] == "2" or message['zone'] ==2:
-                            zone = avrEnums.Zone.Zone2    
-                        if message['zone'] == "3" or message['zone'] ==3:
-                            zone = avrEnums.Zone.Zone3
-                    value=None
-                    if 'value' in message:
-                        value=message['value']
-                    MyDevices.doAction(serial, deviceAction, zone, value)
-                    
+        await aio.sleep(5)
     except aio.CancelledError as e:
-        return            
-    except Exception as e:
-        logging.error('Fatal error: '+str(e))
-        logging.info(traceback.format_exc())
-    if (_watchDogTimer > 0 and cpt % round(_watchDogTimer / _cycle) == 0):
-        jeedomCom.add_changes("daemon", {'event' : 'Ping'});
-        #logging.debug("Still alive")
-        cpt = 0
-    cpt=cpt+1
+        return
+  
+    #listInfo = {"name":"my Denon", "ip":"192.168.128.188", "serial":"1234"}
+    #MyDevices.register(listInfo)
+  
+    cpt=0
+    while True:
+        try:
+            await aio.sleep(_cycle)
+        except aio.CancelledError as e:
+            return            
+        try:
+            if not JEEDOM_SOCKET_MESSAGE.empty():
+                logging.debug("Message received in socket JEEDOM_SOCKET_MESSAGE")
+                jsonMessage=JEEDOM_SOCKET_MESSAGE.get()
+                logging.debug(f"message {jsonMessage}")
+                message = json.loads(jsonMessage)
+                if message['apikey'] != _apikey:
+                    logging.error("Invalid apikey from socket : " + str(message))
+                else: 
+                    # do the action
+                    # Register/Unregister
+                    if message['action'] == "register":
+                        newDeviceInfo = {"name":message['name'], "ip":message['ip'], "serial":message['serial']}
+                        MyDevices.register(newDeviceInfo)
+                    if message['action'] == "unregister":
+                        MyDevices.unregister(message['serial'])
+                    if message['action'] == "unregisterAll":
+                        MyDevices.unregisterAll() 
+                    # action to device
+                    if message['action'] == "doDevice":
+                        serial = message['serial']
+                        deviceAction = message['deviceAction']
+                        zone = avrEnums.Zone.UndefinedZone
+                        if 'zone' in message:
+                            if message['zone'] == "main" or message['zone'] ==1:
+                                zone = avrEnums.Zone.MainZone
+                            if message['zone'] == "2" or message['zone'] ==2:
+                                zone = avrEnums.Zone.Zone2    
+                            if message['zone'] == "3" or message['zone'] ==3:
+                                zone = avrEnums.Zone.Zone3
+                        value=None
+                        if 'value' in message:
+                            value=message['value']
+                        MyDevices.doAction(serial, deviceAction, zone, value)
+                    
+        except aio.CancelledError as e:
+            return            
+        except Exception as e:
+            logging.error('Fatal error: '+str(e))
+            logging.info(traceback.format_exc())
+        if (_watchDogTimer > 0 and cpt % round(_watchDogTimer / _cycle) == 0):
+            jeedomCom.add_changes("daemon", {'event' : 'Ping'});
+            #logging.debug("Still alive")
+            cpt = 0
+        cpt=cpt+1
 
 
 

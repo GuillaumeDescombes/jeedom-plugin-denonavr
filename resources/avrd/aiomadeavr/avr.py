@@ -832,12 +832,12 @@ class MDAVR:
         self.ptask.cancel()
         logging.debug(f"Closed device '{self.name}'")
         if self.notifyEvent:
-          self.notifyEvent(self, EventAVR.Close, {})        
+            self.notifyEvent(self, EventAVR.Close, {})        
 
     def timeout(self) -> bool:
         logging.debug(f"Timeout #{self._timeoutCnt}...")
         if self.notifyEvent:
-          self.notifyEvent(self, EventAVR.TimeOut, {})
+            self.notifyEvent(self, EventAVR.TimeOut, {})
         self.close()
         return True
 
@@ -847,7 +847,10 @@ class MDAVR:
         tosend = f"{cmd}{val}\r"
         logging.debug(f"Sending {tosend}")
         self._writer.write(tosend.encode())
-        await self._writer.drain()
+        try:
+            await self._writer.drain()
+        except asyncio.CancelledError as e:
+            return            
         logging.debug("Write drained")
 
     def _process_response(self, response: str) -> Optional[str]:
@@ -1186,11 +1189,14 @@ class MDAVR:
 
         while self.alive:
             data = b""
-            while not data or data[-1] != ord("\r"):
-                char = await self._reader.read(1)
-                if char == b"":
-                    break
-                data += char
+            try:
+                while not data or data[-1] != ord("\r"):
+                    char = await self._reader.read(1)
+                    if char == b"":
+                        break
+                    data += char
+            except asyncio.CancelledError as e:
+                return            
 
             if data == b"":
                 # Gone
@@ -1209,10 +1215,13 @@ class MDAVR:
         """ Keep on reading the info coming from the AVR"""
 
         while self.alive:
-            cmd, param = await self.write_queue.get()
-            if cmd:
-                await self._send_command(cmd, param)
-            self.write_queue.task_done()
+            try:
+                cmd, param = await self.write_queue.get()
+                if cmd:
+                    await self._send_command(cmd, param)
+                self.write_queue.task_done()
+            except asyncio.CancelledError as e:
+                return            
 
     async def _do_ping(self):
         """ Send a ping to the AVR every _pingFreq s"""
@@ -1221,7 +1230,7 @@ class MDAVR:
                 logging.debug("Send ping ...")
                 self.write_queue.put_nowait(("PW", "?"))
                 if self.notifyEvent:
-                  self.notifyEvent(self, EventAVR.Ping, {})                
+                    self.notifyEvent(self, EventAVR.Ping, {})                
                 await asyncio.sleep(self._timeout)
                 #check timeout
                 delayLastMessage = time.time() - self._lastMessageTime
