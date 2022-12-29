@@ -92,7 +92,7 @@ async def avr_factory(
         reader, writer = await asyncio.wait_for(future, timeout=timeout)
         return MDAVR(name, serial, reader, writer, timeout)
     except asyncio.TimeoutError as e:
-        logging.debug("error when connecting to '{}': timeout".format(host))
+        #logging.debug("error when connecting to '{}': timeout".format(host))
         raise AvrTimeoutError("timeout")
     except Exception as e:
         logging.debug("error when connecting to {}: {}".format(host, e))
@@ -1246,6 +1246,5 @@ class MDAVR:
                 return
             except Exception as e:
                 logging.debug("Problem processing ping: {} - {}".format(e, e.__class__.__name__))  
-                logging.debug(traceback.format_exc())                
-                await asyncio.sleep(self._pingFreq)
+                logging.debug(traceback.format_exc())     
   

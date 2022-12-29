@@ -58,32 +58,43 @@ class devices:
         self.cycle = cycle
 
     def register(self, info):
-        logging.info(f"Registering '{info['name']}'")
-        if "serial" in info and info["serial"].lower() not in self.deviceTasks:
-            jeedomCom.add_changes("devices::"+info["serial"].lower()+"::"+avrEnums.Zone.UndefinedZone.value+"::event", {'avrName': info["name"], 'avrSerial': info["serial"].lower(), 'value' : 'register'});
-            self.deviceTasks[info["serial"].lower()] = aio.create_task(self.setDevice(info))
+        if "serial" in info and "name" in info and ("ip" in info or "host" in info):
+            serial = info["serial"].lower()
+            name = info["name"]
+            if "host" in info:
+                host = info["host"]
+            else:
+                host = info["ip"]
+            if serial not in self.deviceTasks:
+                logging.info(f"Registering '{name}' ({serial}) - '{host}' in task list")
+                jeedomCom.add_changes(f"devices::{serial}::{avrEnums.Zone.UndefinedZone.value}::event", {'avrName': name, 'avrSerial': serial, 'value' : 'register'});
+                self.deviceTasks[serial] = aio.create_task(self.setDevice(serial, name, host))
             
     def unregister(self, serial:str):
-        if serial.lower() in self.deviceTasks:
-            logging.info(f"Unregistering '{serial.lower()}'")
-            if serial.lower() in self.devices:
-              logging.debug("'%s' is gone" % self.devices[serial.lower()].name)
-              self.devices[serial.lower()].close()
-              del self.devices[serial.lower()]      
+        serial=serial.lower()
+        if serial in self.deviceTasks:
+            logging.info(f"Unregistering 'Unknwon' ({serial}) in task list")
+            name="Unknown"
+            if serial in self.devices:
+              name = self.devices[serial].name
+              logging.debug("'%s' is gone" % name)
+              self.devices[serial].close()
+              del self.devices[serial]      
             #cancel task
-            self.deviceTasks[serial.lower()].cancel()            
-            del self.deviceTasks[serial.lower()]
+            self.deviceTasks[serial].cancel()            
+            del self.deviceTasks[serial]
             #send event to jeedom
-            jeedomCom.add_changes("devices::"+serial.lower()+"::"+avrEnums.Zone.UndefinedZone.value+"::event", {'avrName': info["name"], 'avrSerial': info["serial"].lower(), 'value' : 'unregister'});
+            jeedomCom.add_changes(f"devices::{serial}::{avrEnums.Zone.UndefinedZone.value}::event", {'avrName': name, 'avrSerial': serial, 'value' : 'unregister'});
         
     def unregisterAll(self):
         for serial in self.devicesTasks:
             self.unregister(serial)
             
     def doAction(self, serial:str, action:str, zone:avrEnums.Zone, value: Any):
-        if serial.lower() in self.devices:
+        serial=serial.lower()
+        if serial in self.devices:
             logging.info(f"Executing '{action}' for device '{serial}' and zone '{zone.value}'")
-            device = self.devices[serial.lower()]
+            device = self.devices[serial]
             try:
                 func = getattr(device, f"do{action}")
                 sig = signature(func)
@@ -118,44 +129,48 @@ class devices:
             valueConv=value
 
         if commandDef.zone != avrEnums.Zone.UndefinedZone:
-            logging.debug("notificationCmd -> {}: Value for '{}' ({}) in zone '{}' changed to '{}'".format(AVR.name, commandDef.label, commandDef.code, commandDef.zone.value, valueConv))
-            jeedomCom.add_changes("devices::"+AVR.serial+"::"+commandDef.zone.value+"::"+commandDef.code, {'avrName': AVR.name, 'avrSerial': AVR.serial, 'cmdCode': commandDef.code, 'cmdLabel': commandDef.label, 'zone': commandDef.zone.value, 'value': valueConv});
+            logging.debug(f"notificationCmd -> {AVR.name}: Value for '{commandDef.label}' ({commandDef.code}) in zone '{commandDef.zone.value}' changed to '{valueConv}'")
+            jeedomCom.add_changes(f"devices::{AVR.serial}::{commandDef.zone.value}::{commandDef.code}", {'avrName': AVR.name, 'avrSerial': AVR.serial, 'cmdCode': commandDef.code, 'cmdLabel': commandDef.label, 'zone': commandDef.zone.value, 'value': valueConv});
         else:  
-            logging.debug("notificationCmd -> {}: Value for '{}' ({}) changed to '{}'".format(AVR.name, commandDef.label, commandDef.code, valueConv))
-            jeedomCom.add_changes("devices::"+AVR.serial+"::"+commandDef.zone.value+"::"+commandDef.code, {'avrName': AVR.name, 'avrSerial': AVR.serial, 'cmdCode': commandDef.code, 'cmdLabel': commandDef.label, 'value': valueConv});
+            logging.debug(f"notificationCmd -> {AVR.name}: Value for '{commandDef.label}' ({commandDef.code}) changed to '{valueConv}'")
+            jeedomCom.add_changes(f"devices::{AVR.serial}::{commandDef.zone.value}::{commandDef.code}", {'avrName': AVR.name, 'avrSerial': AVR.serial, 'cmdCode': commandDef.code, 'cmdLabel': commandDef.label, 'value': valueConv});
 
     def notificationEvent(self, AVR, event, value):
-        logging.debug("notificationEvent -> {}: Event '{}'".format(AVR.name, event.value))
-        jeedomCom.add_changes("devices::"+AVR.serial+"::"+avrEnums.Zone.UndefinedZone.value+"::event", {'avrName': AVR.name, 'avrSerial': AVR.serial, 'value' : event.value});
+        logging.debug(f"notificationEvent -> {AVR.name}: Event '{event.value}'")
+        jeedomCom.add_changes(f"devices::{AVR.serial}::{avrEnums.Zone.UndefinedZone.value}::event", {'avrName': AVR.name, 'avrSerial': AVR.serial, 'value' : event.value});
             
-    async def setDevice(self, info):
+    async def setDevice(self, serial: str, name: str, host:str):
         while not self.shutDown:
-            if info["serial"].lower() in self.deviceTasks:
-                if info["serial"].lower() in self.devices and self.devices[info["serial"].lower()].alive:
+            if serial in self.deviceTasks:
+                if serial in self.devices and self.devices[serial].alive:
                     ## all right; device is alive
-                    logging.debug(f"Device '{info['name']}' is alive")
+                    logging.debug(f"Device '{name}' ({serial}) - '{host}' is alive")
                 else:
-                    logging.debug(f"Try to add '{info['name']}' ({info['serial'].lower()}) in device list")
+                    logging.debug(f"Try to add '{name}' ({serial}) - '{host}' in device list")
                     try:
-                        newdev = await avr.avr_factory(info["name"], info["serial"].lower(), info["ip"])
+                        newdev = await avr.avr_factory(name, serial, host)
                         if newdev:
-                            self.devices[info["serial"].lower()] = newdev
-                            self.devices[info["serial"].lower()].notifyme(self.notificationCmd, self.notificationEvent)
-                            logging.debug(f"Device '{info['name']}' added in device list")
+                            self.devices[serial] = newdev
+                            self.devices[serial].notifyme(self.notificationCmd, self.notificationEvent)
+                            logging.debug(f"Device '{name}' ({serial}) added in device list")
                         else:
-                            logging.info("Could not connect to {}. Try again in {}s.".format(info['ip'], self.cycle))
+                            logging.info(f"Could not connect to {host}. Try again in {self.cycle}s.")
                     except aio.CancelledError as e:
+                        logging.debug(f"Task has been cancelled. Stopping task.")
                         return
                     except avr.AvrTimeoutError as e:
-                        logging.debug("Could not connect to {}: TimeOut. Try again in {}s.".format(info['ip'], self.cycle))
+                        logging.debug(f"Could not connect to '{name}' ({serial}) - '{host}': TimeOut. Try again in {self.cycle}s.")
+                        pass
                     except Exception as e:
-                        logging.info("Could not connect to {}: {}. Try again in {}s.".format(info['ip'], e.__class__.__name__, self.cycle))
+                        logging.info(f"Could not connect to '{name}' ({serial}) - '{host}': {e.__class__.__name__}. Try again in {self.cycle}s.")
+                        logging.debug(traceback.format_exc())    
             else:
-                logging.debug(f"Device {info} has been unregistered. Cancelling task.")
+                logging.debug(f"Device {info} has been unregistered. Stopping task.")
                 return
             try:    
                 await aio.sleep(self.cycle)
             except aio.CancelledError as e:
+                logging.debug(f"Task has been cancelled. Stopping task.")
                 return    
             
     def stop(self):
@@ -281,7 +296,7 @@ jeedomSocket = None
 jeedomCom=None
 MyDevices = None
 
-_log_level = "info"
+_log_level = "debug"
 _socket_port = 55010
 _socket_host = '127.0.0.1'
 _pidfile = '/tmp/avrd.pid'
@@ -307,8 +322,8 @@ if args.sockethost:
     _socket_host = args.sockethost
 if args.socketport:
     _socket_port = int(args.socketport)
-if args.loglevel:
-    _log_level = args.loglevel
+#if args.loglevel:
+#    _log_level = args.loglevel
 if args.callback:
     _callback = args.callback
 if args.apikey:
