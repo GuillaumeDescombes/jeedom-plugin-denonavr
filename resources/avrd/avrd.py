@@ -154,7 +154,7 @@ class devices:
                             self.devices[serial].notifyme(self.notificationCmd, self.notificationEvent)
                             logging.debug(f"Device '{name}' ({serial}) added in device list")
                         else:
-                            logging.info(f"Could not connect to {host}. Try again in {self.cycle}s.")
+                            logging.info(f"Could not connect to '{name}' ({serial}) - '{host}'. Try again in {self.cycle}s.")
                     except aio.CancelledError as e:
                         logging.debug(f"Task has been cancelled. Stopping task.")
                         return
