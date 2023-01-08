@@ -77,7 +77,7 @@ class devices:
             name="Unknown"
             if serial in self.devices:
               name = self.devices[serial].name
-              logging.debug("'%s' is gone" % name)
+              logging.debug(f"'{name}' ({serial}) is gone")
               self.devices[serial].close()
               del self.devices[serial]      
             #cancel task
@@ -181,7 +181,8 @@ class devices:
 
 
 def handler(signum=None, frame=None):
-    logging.info("Signal %i caught, exiting..." % int(signum))
+    signame = signal.Signals(signum).name
+    logging.info(f"Signal {signame} ({signum}) caught, exiting...")
     shutdown()
     
 def shutdown():
