@@ -170,7 +170,7 @@
               <th style="width: 130px;">{{Type}}</th>
               <th>{{Nom logique}}</th>
               <th>{{Catégorie}}</th>
-              <th style="width: 300px;">{{Paramètres}}</th>
+              <th style="width: 300px;">{{Options}}</th>
               <th>{{Etat}}</th>
               <th style="width: 150px;">{{Action}}</th>
             </tr>

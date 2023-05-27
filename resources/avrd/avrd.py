@@ -35,6 +35,7 @@ from xml.dom.minidom import parseString
 from typing import Any, List, Mapping, Optional, Union
 from inspect import signature
 from enum import Enum
+import operator
 
 try:
     from jeedom.jeedom import *
@@ -76,7 +77,7 @@ class devices:
             logging.info(f"Unregistering 'Unknwon' ({serial}) in task list")
             name="Unknown"
             if serial in self.devices:
-              name = self.devices[serial].name
+              name = self.devices[serial].deviceName
               logging.debug(f"'{name}' ({serial}) is gone")
               self.devices[serial].close()
               del self.devices[serial]      
@@ -122,22 +123,38 @@ class devices:
         if isinstance(value, Enum):
             valueConv=value.value
         elif isinstance(value, List):
-            valueConv=[x.value for x in value]
+            #check if list of Enum
+            if isinstance(value[0], Enum):
+                valueConv=[x.value for x in value]
+            else:
+                valueConv=[x for x in value]
         elif isinstance(value, Mapping):
-            valueConv={x.value:value[x] for x in value}
+            #check if mapping of Enum
+            if isinstance(list(value.values())[0], Enum):
+                #check if key is Enum
+                if isinstance(list(value.keys())[0], Enum):
+                    valueConv={x.value:value[x].value for x in value}
+                else:
+                    valueConv={x:value[x].value for x in value} 
+            else:    
+                #check if key is Enum
+                if isinstance(list(value.keys())[0], Enum):            
+                    valueConv={x.value:value[x] for x in value}
+                else:
+                    valueConv={x:value[x] for x in value}                
         else:
             valueConv=value
 
         if commandDef.zone != avrEnums.Zone.UndefinedZone:
-            logging.debug(f"notificationCmd -> {AVR.name}: Value for '{commandDef.label}' ({commandDef.code}) in zone '{commandDef.zone.value}' changed to '{valueConv}'")
-            jeedomCom.add_changes(f"devices::{AVR.serial}::{commandDef.zone.value}::{commandDef.code}", {'avrName': AVR.name, 'avrSerial': AVR.serial, 'cmdCode': commandDef.code, 'cmdLabel': commandDef.label, 'zone': commandDef.zone.value, 'value': valueConv});
+            logging.debug(f"notificationCmd -> {AVR.deviceName}: Value for '{commandDef.label}' ({commandDef.code}) in zone '{commandDef.zone.value}' changed to '{valueConv}'")
+            jeedomCom.add_changes(f"devices::{AVR.serial}::{commandDef.zone.value}::{commandDef.code}", {'avrName': AVR.deviceName, 'avrSerial': AVR.serial, 'cmdCode': commandDef.code, 'cmdLabel': commandDef.label, 'zone': commandDef.zone.value, 'value': valueConv});
         else:  
-            logging.debug(f"notificationCmd -> {AVR.name}: Value for '{commandDef.label}' ({commandDef.code}) changed to '{valueConv}'")
-            jeedomCom.add_changes(f"devices::{AVR.serial}::{commandDef.zone.value}::{commandDef.code}", {'avrName': AVR.name, 'avrSerial': AVR.serial, 'cmdCode': commandDef.code, 'cmdLabel': commandDef.label, 'value': valueConv});
+            logging.debug(f"notificationCmd -> {AVR.deviceName}: Value for '{commandDef.label}' ({commandDef.code}) changed to '{valueConv}'")
+            jeedomCom.add_changes(f"devices::{AVR.serial}::{commandDef.zone.value}::{commandDef.code}", {'avrName': AVR.deviceName, 'avrSerial': AVR.serial, 'cmdCode': commandDef.code, 'cmdLabel': commandDef.label, 'value': valueConv});
 
     def notificationEvent(self, AVR, event, value):
-        logging.debug(f"notificationEvent -> {AVR.name}: Event '{event.value}'")
-        jeedomCom.add_changes(f"devices::{AVR.serial}::{avrEnums.Zone.UndefinedZone.value}::event", {'avrName': AVR.name, 'avrSerial': AVR.serial, 'value' : event.value});
+        logging.debug(f"notificationEvent -> {AVR.deviceName}: Event '{event.value}'")
+        jeedomCom.add_changes(f"devices::{AVR.serial}::{avrEnums.Zone.UndefinedZone.value}::event", {'avrName': AVR.deviceName, 'avrSerial': AVR.serial, 'value' : event.value});
             
     async def setDevice(self, serial: str, name: str, host:str):
         while not self.shutDown:
@@ -148,7 +165,7 @@ class devices:
                 else:
                     logging.debug(f"Try to add '{name}' ({serial}) - '{host}' in device list")
                     try:
-                        newdev = await avr.avr_factory(name, serial, host)
+                        newdev = await avr.avr_factory(serial, host)
                         if newdev:
                             self.devices[serial] = newdev
                             self.devices[serial].notifyme(self.notificationCmd, self.notificationEvent)
@@ -323,8 +340,8 @@ if args.sockethost:
     _socket_host = args.sockethost
 if args.socketport:
     _socket_port = int(args.socketport)
-#if args.loglevel:
-#    _log_level = args.loglevel
+if args.loglevel:
+    _log_level = args.loglevel
 if args.callback:
     _callback = args.callback
 if args.apikey:

@@ -38,7 +38,7 @@ class Power(Enum):
     Standby = "STANDBY"
 
 
-class ChannelBias(Enum):
+class Channel(Enum):
     FrontLeft = "FL"
     FrontRight = "FR"
     Centre = "C"
@@ -48,6 +48,7 @@ class ChannelBias(Enum):
     SurroundRight = "SR"
     SurroundBackLeft = "SBL"
     SurroundBackRight = "SBR"
+    SurroundBack = "SB"
     FrontHeightLeft = "FHL"
     FrontHeightRight = "FHR"
     FrontWideLeft = "FWL"
@@ -107,6 +108,7 @@ class InputSource(Enum):
     USBIPOD = "USB/IPOD"
     NONE = "OFF"
     MainSource = "SOURCE"
+    HeightK = "8K" 
 
 
 class AudioInput(Enum):
@@ -171,13 +173,19 @@ class DRCMode(Enum):
     Medium = "MID"
     Low = "LOW"
 
-
 class DynamicMode(Enum):
-    # Dynamic colume
+    # Dynamic mode
     Off = "OFF"
     Day = "DAY"
     Evening = "EVE"
     Night = "NGT"
+    
+class DynamicVolume(Enum):
+    # Dynamic volume
+    Off = "OFF"
+    Light = "LIT"
+    Medium = "MED"
+    Heavy = "HEV"
     
 class Zone(Enum):
     # Zone
@@ -193,4 +201,37 @@ class EventAVR(Enum):
     Close = "Close"
     Ping = "Ping"
     
-        
+class Bluetooth(Enum):
+    Transmitter = "Transmitter"
+    OutputMode = "OutputMode"
+
+class BluetoothTransmitter(Enum):
+    Off = "OFF"
+    On = "ON"
+    
+class BluetoothOutputMode(Enum):
+    BTandSpeaker = "SP"
+    BTonly = "BT"
+    
+class AudioRestorer(Enum):
+    Off = "OFF"
+    Low = "LOW"
+    Med = "MED"
+    Hi = "HI"
+    
+class SoundMode(Enum):
+    Music = "MUS"
+    Movie = "MOV"
+    Game = "GAM"
+    PureDirect = "PUR"
+    
+class MicroCodeType(Enum):
+    DTC = "DTS"
+    AVR = "AVR"
+     
+class Standby(Enum):
+    S15M = "15M"
+    S30M = "30M"
+    S60M = "60M"
+    Off = "OFF"
+ 

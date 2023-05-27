@@ -52,10 +52,6 @@ SSTRANSFORM = [
     ("Mch", "Multi-Channel "),
     (" Es ", " ES "),
 ]
-EXTRAS = ["SSINFAISFSV"]
-NEEDSPACE = ["PSDEL", "PSDYNVOL", "PSDRC", "PSLFE", "PSTRE", "Z2PSTRE", "Z3PSTRE", "PSBAS", "Z2PSBAS", "Z3PSBAS", "DA", "DASTN"]
-NOTTOREFRESH = ["PSTONE", "DASTN"]
-ADDTOREFRESH =["DA"]
 
 def only_int(val: str) -> str:
     return "".join(
@@ -75,9 +71,7 @@ class AvrTimeoutError(AvrError):
     pass
 
 
-async def avr_factory(
-    name: str, serial: str, host: str, port: int = 23, timeout: float = 3.0
-) -> "MDAVR":
+async def avr_factory(serial: str, host: str, port: int = 23, timeout: float = 3.0) -> "MDAVR":
     """Connect to an AVR.
 
         :param name: The name of this device.
@@ -90,7 +84,7 @@ async def avr_factory(
     try:
         future = asyncio.open_connection(host, port=port)
         reader, writer = await asyncio.wait_for(future, timeout=timeout)
-        return MDAVR(name, serial, reader, writer, timeout)
+        return MDAVR(serial, reader, writer, timeout)
     except asyncio.TimeoutError as e:
         #logging.debug("error when connecting to '{}': timeout".format(host))
         raise AvrTimeoutError("timeout")
@@ -111,23 +105,23 @@ def _on_off_to_bool(value: str) -> bool:
 def _list_enum_to_string(myList: List[Enum]) -> str:
     return "["+",".join([""+x.name+":"+x.value+"" for x in myList])+"]"
 
-def _dict_enum_to_string(myDict: Mapping[ChannelBias, Any]) -> str:
+def _dict_enum_to_string(myDict: Mapping[Enum, Any]) -> str:
     return "["+",".join([""+x.name+":"+x.value+" => "+str(myDict[x]) for x in myDict])+"]"
 
 
 class _CommandDef:
     code: str
+    codeRequest: str
     label: str
     zone: Zone
     values: Optional[Enum]
 
-    def __init__(self, code: str, label: str, zone, vals: Any):
+    def __init__(self, code: str, codeRequest: str, label: str, zone, vals: Any):
         self.code = code
+        self.codeRequest = codeRequest
         self.label = label
         self.values = vals
         self.zone = zone
-       
-
 
 class MDAVR:
     """Connection to a Marantz AVR over Telnet.
@@ -136,62 +130,139 @@ class MDAVR:
     """
 
     CMDS_DEFS: Mapping[str, _CommandDef] = {
-        "PW": _CommandDef("PW", "Main Power", Zone.UndefinedZone, Power),
-        "ZM": _CommandDef("ZM", "Power", Zone.MainZone, Power),
-        "Z2": _CommandDef("Z2", "Power", Zone.Zone2, Power),
-        "Z3": _CommandDef("Z3", "Power", Zone.Zone3, Power),
-        "MU": _CommandDef("MU", "Muted", Zone.MainZone, None),
-        "Z2MU": _CommandDef("Z2MU", "Muted", Zone.Zone2, None),
-        "Z3MU": _CommandDef("Z3MU", "Muted", Zone.Zone3, None),
-        "MV": _CommandDef("MV", "Volume", Zone.MainZone, None),
-        "Z2MV": _CommandDef("Z2MV", "Volume", Zone.Zone2, None),
-        "Z3MV": _CommandDef("Z3MV", "Volume", Zone.Zone3, None),
-        "SI": _CommandDef("SI", "Source", Zone.MainZone, InputSource),
-        "Z2SI": _CommandDef("Z2SI", "Source", Zone.Zone2, InputSource),
-        "Z3SI": _CommandDef("Z3SI", "Source", Zone.Zone3, InputSource),
-        "SV": _CommandDef("SV", "Video Mode", Zone.UndefinedZone, InputSource),
-        "MS": _CommandDef("MS", "Surround Mode", Zone.UndefinedZone, SurroundMode),
-        "CV": _CommandDef("CV", "Channel Bias", Zone.UndefinedZone, ChannelBias),
-        "PV": _CommandDef("PV", "Picture Mode", Zone.UndefinedZone, PictureMode),
-        "ECO": _CommandDef("ECO", "Eco Mode", Zone.UndefinedZone, EcoMode),
-        "SSSOD": _CommandDef("SSSOD", "Available Source", Zone.UndefinedZone, InputSource),
-        "PSDEL": _CommandDef("PSDEL", "Sound Delay", Zone.UndefinedZone, None),
-        "PSDRC": _CommandDef("PSDRC", "Dynamic Range Compression", Zone.UndefinedZone, DRCMode),
-        "PSDYNVOL": _CommandDef("PSDYNVOL", "Dynamic Volume", Zone.UndefinedZone, DynamicMode),
-        "PSLFE": _CommandDef("PSLFE", "Sound LFE", Zone.UndefinedZone, None),
-        "PSBAS": _CommandDef("PSBAS", "Sound Bass", Zone.MainZone, None),
-        "Z2PSBAS": _CommandDef("Z2PSBAS", "Sound Bass", Zone.Zone2, None),
-        "Z3PSBAS": _CommandDef("Z3PSBAS", "Sound Bass", Zone.Zone3, None),
-        "PSTRE": _CommandDef("PSTRE", "Sound Treble", Zone.MainZone, None),
-        "Z2PSTRE": _CommandDef("Z2PSTRE", "Sound Treble", Zone.Zone2, None),
-        "Z3PSTRE": _CommandDef("Z3PSTRE", "Sound Treble", Zone.Zone3, None),
-        "PSTONE": _CommandDef("PSTONE", "Sound Tone Control", Zone.UndefinedZone, None),
-        "DASTN": _CommandDef("DASTN", "Tuner Station Name", Zone.UndefinedZone, None),
-        "TFANNAME": _CommandDef("TFANNAME", "Tuner Station Name", Zone.UndefinedZone, None),
-        "TPAN": _CommandDef("TPAN", "Tuner Preset", Zone.UndefinedZone, None),
-        "TMAN": _CommandDef("TMAN", "Tuner Mode", Zone.UndefinedZone, None),
+        "PW": _CommandDef("PW", "PW?", "Main Power", Zone.UndefinedZone, Power),
+        "ZM": _CommandDef("ZM", "ZM?", "Power", Zone.MainZone, Power),
+        "Z2": _CommandDef("Z2", "Z2?", "Power", Zone.Zone2, Power),
+        "Z3": _CommandDef("Z3", "Z3?", "Power", Zone.Zone3, Power),
+        "MU": _CommandDef("MU", "MU?", "Muted", Zone.MainZone, None),
+        "Z2MU": _CommandDef("Z2MU", "Z2MU?", "Muted", Zone.Zone2, None),
+        "Z3MU": _CommandDef("Z3MU", "Z3MU?", "Muted", Zone.Zone3, None),
+        "MV": _CommandDef("MV", "MV?", "Volume", Zone.MainZone, None),
+        "Z2MV": _CommandDef("Z2MV", "Z2?", "Volume", Zone.Zone2, None),
+        "Z3MV": _CommandDef("Z3MV", "Z3?", "Volume", Zone.Zone3, None),
+        "SI": _CommandDef("SI", "SI?", "Source", Zone.MainZone, InputSource),
+        "Z2SI": _CommandDef("Z2SI", "Z2?", "Source", Zone.Zone2, InputSource),
+        "Z3SI": _CommandDef("Z3SI", "Z3?", "Source", Zone.Zone3, InputSource),
+        "SV": _CommandDef("SV", "SV?", "Video Mode", Zone.UndefinedZone, InputSource),
+        "MS": _CommandDef("MS", "MS?", "Surround Mode", Zone.UndefinedZone, SurroundMode),
+        "CV": _CommandDef("CV", "CV?", "Channel Bias", Zone.UndefinedZone, Channel),
+        "PV": _CommandDef("PV", "PV?", "Picture Mode", Zone.UndefinedZone, PictureMode),
+        "ECO": _CommandDef("ECO", "ECO?", "Eco Mode", Zone.UndefinedZone, EcoMode),
+
+        "SSSOD": _CommandDef("SSSOD", "SSOD ?", "Available Source", Zone.UndefinedZone, InputSource),
+        "SSFUN": _CommandDef("SSFUN", "SSFUN ?", "Source Name", Zone.UndefinedZone, InputSource),
+        "SSLAN": _CommandDef("SSLAN", "SSLAN ?", "Language", Zone.UndefinedZone, None),
+        "SSSMG": _CommandDef("SSSMG", "SSSMG ?", "Sound Mode", Zone.UndefinedZone, SoundMode),
+        "SSLEV": _CommandDef("SSLEV", "SSLEV ?", "Channel Level", Zone.UndefinedZone, Channel),
+        "SSINFFRM": _CommandDef("SSINFFRM", "SSINFFRM ?", "Microcode Version", Zone.UndefinedZone, None),
+        "SSLOC": _CommandDef("SSLOC", "SSLOC ?", "Lock", Zone.UndefinedZone, None),
+
+        "PSDEL": _CommandDef("PSDEL", "PSDEL ?", "Sound Delay", Zone.UndefinedZone, None),
+        "PSDRC": _CommandDef("PSDRC", "PSDRC ?", "Dynamic Range Compression", Zone.UndefinedZone, DRCMode),
+        "PSDYNVOL": _CommandDef("PSDYNVOL", "PSDYNVOL ?", "Dynamic Volume", Zone.UndefinedZone, DynamicVolume),
+        "PSLFE": _CommandDef("PSLFE", "PSLFE ?", "Sound LFE", Zone.UndefinedZone, None),
+        "PSBAS": _CommandDef("PSBAS", "PSBAS ?", "Sound Bass", Zone.MainZone, None),
+        "Z2PSBAS": _CommandDef("Z2PSBAS", "Z2PSBAS ?", "Sound Bass", Zone.Zone2, None),
+        "Z3PSBAS": _CommandDef("Z3PSBAS", "Z3PSBAS ?", "Sound Bass", Zone.Zone3, None),
+        "PSTRE": _CommandDef("PSTRE", "PSTRE ?", "Sound Treble", Zone.MainZone, None),
+        "Z2PSTRE": _CommandDef("Z2PSTRE", "Z2PSTRE ?", "Sound Treble", Zone.Zone2, None),
+        "Z3PSTRE": _CommandDef("Z3PSTRE", "Z3PSTRE ?", "Sound Treble", Zone.Zone3, None),
+        "PSTONE": _CommandDef("PSTONE", "PSTONE CTRL ?", "Sound Tone Control", Zone.UndefinedZone, None),
+        "PSCLV": _CommandDef("PSCLV", "PSCLV ?", "Center Level", Zone.UndefinedZone, None),
+        "PSSWL": _CommandDef("PSSWL", "PSSWL ?", "Subwoofer Level", Zone.UndefinedZone, None),
+        "PSHEQ": _CommandDef("PSHEQ", "PSHEQ ?", "Headphone EQ", Zone.UndefinedZone, None),
+        "PSDYNEQ": _CommandDef("PSDYNEQ", "PSDYNEQ ?", "Dynamic EQ", Zone.UndefinedZone, None),
+        "PSREFLEV": _CommandDef("PSREFLEV", "PSREFLEV ?", "Dynamic EQ Reference Level", Zone.UndefinedZone, None),
+        "PSRSTR": _CommandDef("PSRSTR", "PSRSTR ?", "Audio Restorer", Zone.UndefinedZone, AudioRestorer),
         
-        # To be added
-        # PSCLV - Sound Center Level
-        # PSRSTR - Sound Audio Restorer
-        # PSDYNEQ - Sound Dyn Eq
-        # PSREFLEV - Sound Dyn Eq Ref Level
-        # PSHEQ - Sound Headphone EQ
-        # DA -  DASTN Long Station Name
+        "DASTN": _CommandDef("DASTN", "DA ?", "Tuner Station Name", Zone.UndefinedZone, None),
+        "DAPTY": _CommandDef("DAPTY", "DA ?", "Tuner Program Type", Zone.UndefinedZone, None),       
+        "DAENL": _CommandDef("DAENL", "DA ?", "Tuner Ensemble Label", Zone.UndefinedZone, None),
+        "DAFRQ": _CommandDef("DAFRQ", "DA ?", "Tuner Frequency", Zone.UndefinedZone, None),   
+        "DAQUA": _CommandDef("DAQUA", "DA ?", "Tuner Quality", Zone.UndefinedZone, None),   
+        "DAINF": _CommandDef("DAINF", "DA ?", "Tuner Audio Information", Zone.UndefinedZone, None),           
+        "TFANNAME": _CommandDef("TFANNAME", "TFANNAME?", "Tuner Station Name", Zone.UndefinedZone, None),
+        "TPAN": _CommandDef("TPAN", "TPAN?", "Tuner Preset", Zone.UndefinedZone, None),
+        "TMAN": _CommandDef("TMAN", "TMAN?", "Tuner Mode", Zone.UndefinedZone, None),
+        "OPTPN": _CommandDef("OPTPN", "OPTPN ?", "Tuner Station List", Zone.UndefinedZone, None),
+        
+        "R1": _CommandDef("R1", "RR?", "Zone Name", Zone.MainZone, None),
+        "R2": _CommandDef("R2", "RR?", "Zone Name", Zone.Zone2, None),
+        "R3": _CommandDef("R3", "RR?", "Zone Name", Zone.Zone3, None),
+        "SPPR": _CommandDef("SPPR", "SPPR ?", "Speaker Preset", Zone.UndefinedZone, None),
+        "BTTX": _CommandDef("BTTX", "BTTX ?", "Bluetooth", Zone.UndefinedZone, None),
+        "NSFRN": _CommandDef("NSFRN", "NSFRN ?", "Name", Zone.UndefinedZone, None),
+        "STBY": _CommandDef("STBY", "STBY?", "Standby", Zone.UndefinedZone, Standby),
+
+        # Notes:
+        # ------
+        # RR?   Get the list of zones with associated Name => Reply 
+        #       R1xxx
+        #       R2xxxx ...
+        # DA ?  Get the status of tuner => Reply
+        #       DASTN Long Station Name
         #       DAPTY Program Type
         #       DAENL Ensemble Label
         #       DAFRQ Frequency
         #       DAQUA Quality
         #       DAINF Audio Information
-        # ....
+        #
+        # To be added
         # SSANA ? analog inputs
         # SSHDM ? Mapping between source and HDMI connection
         # SSIPM ?
         # SSDIN ? digital inputs,  COax OPtical
-        # SSSPC ? Speakers' configuration
-        # SSPAA ? Not sure. Active speakers config? Also returns SSSPC
-        # SSQSNZMA ?  Smart select.. what for?        
-        # 
+        # SSSPC ? Speakers' detailed configuration
+        # SSPAA ? Speakers' configuration
+		#		'FRB' => '5.1-Channel+FrontB',			
+		#		'BIA' => '5.1-Channel (Bi-Amp)',	
+		#		'ZO2' => '5.1-Channel+Zone2',
+		#		'ZO3' => '5.1-Channel+Zone3',
+		#		'ZOM' => '5.1-Channel+Zone2/3-Mono',
+		#		'NOR' => '7.1-Kanal',
+		#		'2CH' => '7.1/2-Channel-Front',
+		#		'91C' => '9.1-Channel',
+		#		'DAT' => 'Dolby Atmos',
+        # SSHOS ?
+        #
+        # SSQSNZMA ?  List of Quick select name        
+        # SSINFMO1INT ? HDMI # for Monitor 1
+        # SSINFMO1HDR ? HDR Support for Monitor 1
+        # SSINFMO1RES ? List of supported resolution for Monitor 1
+        # SSINFMO1FEA ? Advanced function of Monitor 1
+        # SSINFMO2INT ? HDMI # for Monitor 2
+        # SSINFMO2HDR ? HDR Support for Monitor 2
+        # SSINFMO2RES ? List of supported resolution for Monitor 2
+        # SSINFMO2FEA ? Advanced function of Monitor 2
+        # SSINFAISFSV ? Sampling Rate
+        # SSINFAISSIG ? Signal Format
+        #   '01' => 'Analog',
+	    #   '02' => 'PCM',
+		#   '03' => 'Dolby Audio DD',
+		#   '04' => 'Dolby TrueHD',
+		#   '05' => 'Dolby Atmos',
+		#   '06' => 'DTS',
+        #   '08' => 'DTS-HD Hi Res',
+		#   '09' => 'DTS-HD Mstr',
+        #   '12' => 'Dolby Digital',
+		#   '13' => 'PCM Zero',   
+        # SD? Sound input mode
+        #	'AUTO'		=> 'auto',
+		#   'HDMI'		=> 'hdmi',
+		#   'DIGITAL'	=> 'digital',
+		#   'ANALOG'	=> 'analog',
+		#   'EXT.IN'	=> 'externalInput',
+		#   '7.1IN'		=> '7.1input',
+		#   'ARC'		=> 'ARCplaying',
+        #   'EARC'      => 'Enhanced ARC'
+		#   'NO'		=> 'noInput',
+        # OPTPSTUNER ?
+        # OPSTS ?
+        # SYMODTUN ?    Type of Tuner (EUR, ...)
+        # SYMDNOR ?
+        # SYSDV ?
+        # SYHDMIDIAG ? Diagnostic HMDI
+        # VIALL?    
     }
 
     _reader: asyncio.StreamReader
@@ -203,14 +274,12 @@ class MDAVR:
 
     def __init__(
         self,
-        name: str,
         serial: str,
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
         timeout: float = 3,
         pingFreq: float = 30
     ):
-        self.name = name
         self.serial = serial
         self._reader = reader
         self._writer = writer
@@ -224,30 +293,26 @@ class MDAVR:
             self._clear_current(cmd)
 
         self.cvend = True
+        self.sslevend = True
         self.notifyCmd = None
         self.notifyEvent = None
         self.mysources = []
         self.mysourcesNotUsed = []
+        self.sourcesName: Mapping[InputSource, str] = {}
         self._lastMessageTime = 0
         self._timeoutCnt = 0
         # Start reading
         self.wtask = asyncio.get_event_loop().create_task(self._do_write())
         self.rtask = asyncio.get_event_loop().create_task(self._do_read())
         self.ptask = asyncio.get_event_loop().create_task(self._do_ping())
-        self._get_capabilities()
-        self.doRefresh()
+        self.doRefresh() 
         if self.notifyEvent:
           self.notifyEvent(self, EventAVR.Init, {})
 
-    def _get_capabilities(self):
-        """
-        Here we try to get the various capabilities of the device connected.
-        """
-        # Let's get the available Sources
-        self.write_queue.put_nowait(("SSSOD", " ?"))
 
     def _get_current(self, cmd) -> Any:
-        return self.status[self.CMDS_DEFS[cmd].code]
+        code = self.CMDS_DEFS[cmd].code
+        return self.status[code]
         
     def _clear_current(self, cmd):
         self.status[self.CMDS_DEFS[cmd].code]= None
@@ -271,7 +336,6 @@ class MDAVR:
         elif zone == zone.Zone3:
           return self._get_current("Z3")
         else: raise AvrError("Unknown Zone") 
-
 
     @property
     def muted(self, zone: Zone) -> Optional[bool]:
@@ -325,11 +389,11 @@ class MDAVR:
         """List of available input sources."""
         if self.mysourcesNotUsed:
             return self.mysourcesNotUsed
-        return []
+        return []         
 
     @property
-    def soundMode(self) -> Optional[SurroundMode]:
-        """Name of the current sound mode."""
+    def surroundMode(self) -> Optional[SurroundMode]:
+        """Name of the current surround mode."""
         return self._get_current("MS")
 
     @property
@@ -358,13 +422,55 @@ class MDAVR:
         return self._get_list("ECO")
 
     @property
-    def channelsBias(self) -> Mapping[ChannelBias, float]:
+    def channelsBias(self) -> Mapping[Channel, float]:
         return self._get_current("CV")
 
     @property
-    def channelsBiasList(self) -> List[ChannelBias]:
+    def channelsBiasList(self) -> List[Channel]:
         """List of currently available."""
         return [x for x in self._get_current("CV").keys()]
+
+    @property
+    def sourceName(self) -> Mapping[InputSource, str]:
+        """Name of input sources."""
+        return self.sourcesName
+
+    @property
+    def soundMode(self) -> Optional[SoundMode]:
+        """Name of the current sound mode."""
+        return self._get_current("SSSMG")
+
+    @property
+    def language (self) -> Optional[str]:
+        """ language. """
+        return self._get_current("SSLAN")
+        
+    @property
+    def centerLevel (self) -> Optional[float]:
+        """ level of center spreaker # """
+        channelLevel= self._get_current("SSLEV")
+        return channelLevel[Channel.Centre] 
+
+    @property
+    def subwooferLevel (self) -> List[float]:
+        """ level of subwoofer spreaker # """
+        channelLevel= self._get_current("SSLEV")
+        if channelLevel[Channel.Subwoofer2]:
+            return (channelLevel[Channel.Subwoofer], channelLevel[Channel.Subwoofer2])
+        elif channelLevel[Channel.Subwoofer]:
+            return (channelLevel[Channel.Subwoofer], 0)
+        else:
+            return (0, 0)
+
+    @property
+    def channelLevel (self) -> Mapping[Channel, float]:
+        """ level of channels # """
+        return self._get_current("SSLEV")  
+
+    @property
+    def microcodeVersion(self) -> Mapping[MicroCodeType, str]:
+        """ microcode version # """
+        return self._get_current("SSINFFRM")    
 
     @property
     def drcMode(self) -> Optional[DRCMode]:
@@ -424,40 +530,119 @@ class MDAVR:
         return self._get_current("PSTONE")
 
     @property
-    def tunerStationName(self) -> str:
+    def headphoneEQ (self) -> Optional[bool]:
+        """ headphone EQ # """
+        return self._get_current("PSHEQ") 
+
+    @property
+    def dynamicEQ (self) -> Optional[bool]:
+        """ dynamic EQ # """
+        return self._get_current("PSDYNEQ") 
+
+    @property
+    def dynamicEQReferenceLevel (self) -> Optional[int]:
+        """ dynamic EQ reference level # """
+        return self._get_current("PSREFLEV") 
+
+    @property
+    def audioRestorer (self) -> Optional[AudioRestorer]:
+        """ Audio restorer # """
+        return self._get_current("PSRSTR")        
+
+    @property
+    def tunerStationName(self) -> Optional[str]:
         """Current tuner station name (RDS or DAB)."""
         if self._get_current("DASTN"):
             return self._get_current("DASTN")
-        elif self._get_current("PSTONE"):
-            return self._get_current("PSTONE")
+        elif self._get_current("TFANNAME"):
+            return self._get_current("TFANNAME")
         else:
             return None
 
     @property
-    def tunerPreset(self) -> Optional[bool]:
+    def tunerProgramType(self) -> Optional[str]:
+        """Current tuner program type."""
+        return self._get_current("DAPTY")
+
+    @property
+    def tunerEnsembleLabel(self) -> Optional[str]:
+        """Current tuner ensemble label."""
+        return self._get_current("DAENL")
+        
+    @property
+    def tunerFrequency(self) -> Optional[str]:
+        """Current tuner frequency."""
+        return self._get_current("DAFRQ")
+
+    @property
+    def tunerQuality(self) -> Optional[int]:
+        """Current tuner quality."""
+        return self._get_current("DAQUA")
+
+    @property
+    def tunerAudioInformation(self) -> Optional[str]:
+        """Current tuner audio information."""
+        return self._get_current("DAINF")
+
+    @property
+    def tunerPreset(self) -> Optional[int]:
         """Current tuner preset."""
         return self._get_current("TPAN")
         
+    @property
+    def tunerStationList(self) -> Mapping[int, str]:
+        """Current tuner preset."""
+        return self._get_current("OPTN")
+    
+    @property
+    def zoneName (zone: Zone) -> Optional[str]:
+        """Zone name."""
+        if zone == zone.MainZone:
+          return self._get_current("R1")        
+        elif zone == zone.Zone2:
+          return self._get_current("R2")
+        elif zone == zone.Zone3:
+          return self._get_current("R3")
+        else: raise AvrError("Unknown Zone")           
+        
+    @property
+    def speakerPreset (self) -> Optional[int]:
+        """ spreaker Preset # """
+        return self._get_current("SPPR")
+    
+    @property
+    def bluetooth (self) -> Mapping[Bluetooth, Any]:
+        """ bluetooth # """
+        return self._get_current("BTTX")
+
+    @property
+    def deviceName (self) -> Optional[str]:
+        """ name of the device # """
+        if self._get_current("NSFRN"):
+            return self._get_current("NSFRN")
+        return f"AVR #{self.serial}"
+        
+    @property
+    def lock(self) -> Optional[bool]:
+        """Current Lock status."""
+        return self._get_current("SSLOC")      
+
+    @property
+    def standby(self) -> Optional[Standby]:
+        """Current Standby value."""
+        return self._get_current("STBY")      
+
+    #xxxxx#        
+
     def doRefresh(self) -> None:
         """Refresh all properties from the AVR."""
-
+        
+        alreadySent = []
         for cmd_def in self.CMDS_DEFS:
-            if cmd_def in NEEDSPACE:
-                qs = " ?"
-            else:
-                qs = "?"
-            if not (cmd_def in NOTTOREFRESH):
-                logging.debug(f"Refresh for '{self.CMDS_DEFS[cmd_def].label}' ['{cmd_def}']")
-                fut = self.write_queue.put_nowait((cmd_def, qs))
-        for cmd_def in ADDTOREFRESH:
-            if cmd_def in NEEDSPACE:
-                qs = " ?"
-            else:
-                qs = "?"
-            logging.debug(f"Refresh for 'N/A' ['{cmd_def}']")
-            fut = self.write_queue.put_nowait((cmd_def, qs))                
-                
-               
+            if not (self.CMDS_DEFS[cmd_def].codeRequest in alreadySent):
+                logging.debug(f"Refresh for '{self.CMDS_DEFS[cmd_def].label}' ['{cmd_def}']: '{self.CMDS_DEFS[cmd_def].codeRequest}'")
+                self.write_queue.put_nowait((self.CMDS_DEFS[cmd_def].codeRequest, ""))
+                alreadySent.append(self.CMDS_DEFS[cmd_def].codeRequest)                     
 
     def doTurnAVROn(self) -> None:
         """Turn the AVR on."""
@@ -547,7 +732,7 @@ class MDAVR:
         else: raise AvrError("Unknown Zone")   
         
     def doSetChannelBias(self, value) -> None:
-        """Set the volume level.
+        """Set the bias of the channel.
 
         Arguments:
         value  -- chan: channel to set; level:a float value between -12.0 and +12.0
@@ -556,21 +741,22 @@ class MDAVR:
         chan = value["chan"]
         if isinstance(chan, str):
             try:           
-              chanEnum=ChannelBias(chan)
-              logging.debug(f"Converting '{chan}' into enum: {chanEnum.name}:{chanEnum.value}")
+              chanEnum=Channel(chan)
+              # logging.debug(f"Converting '{chan}' into enum: {chanEnum.name}:{chanEnum.value}")
             except ValueError as e:
               raise AvrError(f"Unknown Channel {chan}")
-        elif isinstance(chan, ChannelBias):
+        elif isinstance(chan, Channel):
             chanEnum=chan
         else:
             raise AvrError("Unknown Channel")
             
         level = value["level"]
-        if chanEnum not in self.channels_bias:
+        channelBias = self._get_current("CV")
+        if chanEnum not in channelBias:
             logging.warning(f"Channel {chanEnum.name} is not available right now.")
             return
 
-        if self.channels_bias[chanEnum] != level:
+        if channelBias[chanEnum] != level:
             level = level + 50  # 50 is 0dB
             if level < 38:
                 level = 38
@@ -585,21 +771,22 @@ class MDAVR:
             cmd = chanEnum.value
             self.write_queue.put_nowait(("CV", f"{cmd} {level:02}"))
          
-    def doChannelBiasUp(self, value: Union[str, ChannelBias]) -> None:
-        """Turn the volume level up one notch."""
+    def doChannelBiasUp(self, value: Union[str, Channel]) -> None:
+        """Turn the bias level up one notch."""
         
         if isinstance(value, str):
             try:           
-              chanEnum=ChannelBias(value)
-              logging.debug(f"Converting '{value}' into enum: {chanEnum.name}:{chanEnum.value}")
+              chanEnum=Channel(value)
+              # logging.debug(f"Converting '{value}' into enum: {chanEnum.name}:{chanEnum.value}")
             except ValueError as e:
               raise AvrError(f"Unknown Channel {value}")
-        elif isinstance(value, ChannelBias):
+        elif isinstance(value, Channel):
             chanEnum=value
         else:
             raise AvrError("Unknown Channel")        
             
-        if chanEnum not in self.channels_bias:
+        channelBias = self._get_current("CV")    
+        if chanEnum not in channelBias:
             logging.warning(f"Channel {chanEnum.name} is not available right now.")
             return
         if self.channels_bias[chanEnum] == 12:
@@ -609,21 +796,22 @@ class MDAVR:
         cmd = chanEnum.value
         self.write_queue.put_nowait(("CV", f"{cmd} UP"))
 
-    def doChannelBiasDown(self, value: Union[str, ChannelBias]) -> None:
-        """Turn the volume level down one notch."""
+    def doChannelBiasDown(self, value: Union[str, Channel]) -> None:
+        """Turn the bias level down one notch."""
 
         if isinstance(value, str):
             try:           
-              chanEnum=ChannelBias(value)
-              logging.debug(f"Converting '{value}' into enum: {chanEnum.name}:{chanEnum.value}")
+              chanEnum=Channel(value)
+              # logging.debug(f"Converting '{value}' into enum: {chanEnum.name}:{chanEnum.value}")
             except ValueError as e:
               raise AvrError(f"Unknown Channel {value}")
-        elif isinstance(value, ChannelBias):
+        elif isinstance(value, Channel):
             chanEnum=value
         else:
-            raise AvrError("Unknown Channel")  
+            raise AvrError("Unknown Channel")
             
-        if chanEnum not in self.channels_bias:
+        channelBias = self._get_current("CV")    
+        if chanEnum not in channelBias:
             logging.warning(f"Channel {chanEnum.name} is not available right now.")
             return
         if self.channels_bias[chanEnum] == -12:
@@ -643,7 +831,7 @@ class MDAVR:
         if isinstance(value, str):
             try:           
               sourceEnum=InputSource(value)
-              logging.debug(f"Converting '{value}' into enum: {sourceEnum.name}:{sourceEnum.value}")
+              # logging.debug(f"Converting '{value}' into enum: {sourceEnum.name}:{sourceEnum.value}")
             except ValueError as e:
               raise AvrError(f"Unknown Source {value}")
         elif isinstance(value, InputSource):
@@ -665,7 +853,7 @@ class MDAVR:
         if isinstance(value, str):
             try:           
               modeEnum=SurroundMode(value)
-              logging.debug(f"Converting '{value}' into enum: {modeEnum.name}:{modeEnum.value}")
+              # logging.debug(f"Converting '{value}' into enum: {modeEnum.name}:{modeEnum.value}")
             except ValueError as e:
               raise AvrError(f"Unknown sound mode {value}")
         elif isinstance(value, SurroundMode):
@@ -681,7 +869,7 @@ class MDAVR:
         if isinstance(value, str):
             try:           
               modeEnum=PictureMode(value)
-              logging.debug(f"Converting '{value}' into enum: {modeEnum.name}:{modeEnum.value}")
+              # logging.debug(f"Converting '{value}' into enum: {modeEnum.name}:{modeEnum.value}")
             except ValueError as e:
               raise AvrError(f"Unknown picture mode {value}")
         elif isinstance(value, PictureMode):
@@ -697,7 +885,7 @@ class MDAVR:
         if isinstance(value, str):
             try:           
               modeEnum=EcoMode(value)
-              logging.debug(f"Converting '{value}' into enum: {modeEnum.name}:{modeEnum.value}")
+              # logging.debug(f"Converting '{value}' into enum: {modeEnum.name}:{modeEnum.value}")
             except ValueError as e:
               raise AvrError(f"Unknown eco mode {value}")
         elif isinstance(value, EcoMode):
@@ -726,7 +914,7 @@ class MDAVR:
         if isinstance(value, str):
             try:           
               modeEnum=DRCMode(value)
-              logging.debug(f"Converting '{value}' into enum: {modeEnum.name}:{modeEnum.value}")
+              # logging.debug(f"Converting '{value}' into enum: {modeEnum.name}:{modeEnum.value}")
             except ValueError as e:
               raise AvrError(f"Unknown drc mode {value}")
         elif isinstance(value, DRCMode):
@@ -742,7 +930,7 @@ class MDAVR:
         if isinstance(value, str):
             try:           
               modeEnum=DynamicMode(value)
-              logging.debug(f"Converting '{value}' into enum: {modeEnum.name}:{modeEnum.value}")
+              # logging.debug(f"Converting '{value}' into enum: {modeEnum.name}:{modeEnum.value}")
             except ValueError as e:
               raise AvrError(f"Unknown dynamic volume mode {value}")
         elif isinstance(value, DynamicMode):
@@ -814,6 +1002,140 @@ class MDAVR:
         elif value>56:
             value=56 #max
         self.write_queue.put_nowait(("TPAN", f"{value:02}"))
+  
+  
+    def doLanguage (self, value: str) -> None:
+        logging.error("this function 'doLanguage' is not implemented")
+        
+    def doSpeakerPreset (self, value: int) -> None:
+        if value >= 1 and value <=2:
+            self.write_queue.put_nowait(("SPPR", f" {value}"))
+    
+    def doBluetoothTransmitterOn (self) -> None:
+        self.write_queue.put_nowait(("BTTX", " ON"))
+
+    def doBluetoothTransmitterOff (self) -> None:
+        self.write_queue.put_nowait(("BTTX", " OFF"))
+
+    def doBluetoothOutputMode (self, value: Union[str, BluetoothOutputMode]) -> None:
+        """Select the bluetooth output mode."""
+        
+        if isinstance(value, str):
+            try:           
+              modeEnum=BluetoothOutputMode(value)
+              # logging.debug(f"Converting '{value}' into enum: {modeEnum.name}:{modeEnum.value}")
+            except ValueError as e:
+              raise AvrError(f"Unknown bluetooth output mode {value}")
+        elif isinstance(value, BluetoothOutputMode):
+            modeEnum=value
+        else:
+            raise AvrError("Unknown bluetooth output mode")
+            
+        self.write_queue.put_nowait(("BTTX", " " + modeEnum.value))    
+        
+    def doHeadphoneEQOn (self) -> None:
+        self.write_queue.put_nowait(("PSHEQ", " ON"))
+        
+    def doHeadphoneEQOff (self) -> None:
+        self.write_queue.put_nowait(("PSHEQ", " OFF"))        
+
+    def doDynamicEQOn (self) -> None:
+        self.write_queue.put_nowait(("PSDYNEQ", " ON"))
+
+    def doDynamicEQOff (self) -> None: 
+        self.write_queue.put_nowait(("PSDYNEQ", " OFF"))
+
+    def doDynamicEQReferenceLevel (self, value: int) -> None:
+        value = round(value / 5, 0) * 5
+        if value<0:
+            value=0
+        if value>15:
+            value=15
+        self.write_queue.put_nowait(("PSREFLEV", f" {value}"))
+        return self._get_current("PSREFLEV") 
+
+    def doAudioRestorer (self, value: Union[str, AudioRestorer]) -> None:
+        """Select the audio restorer mode."""
+        
+        if isinstance(value, str):
+            try:           
+              modeEnum=AudioRestorer(value)
+              # logging.debug(f"Converting '{value}' into enum: {modeEnum.name}:{modeEnum.value}")
+            except ValueError as e:
+              raise AvrError(f"Unknown audio restorer mode {value}")
+        elif isinstance(value, AudioRestorer):
+            modeEnum=value
+        else:
+            raise AvrError("Unknown audio restorer mode")
+  
+        self.write_queue.put_nowait(("PSRSTR", " " + modeEnum.value))    
+        
+    def doSetLevelChannel(self, value) -> None:
+        """Set the level of the channel.
+
+        Arguments:
+        value  -- chan: channel to set; level:a float value between -12.0 and +12.0
+        """
+               
+        chan = value["chan"]
+        if isinstance(chan, str):
+            try:           
+              chanEnum=Channel(chan)
+              # logging.debug(f"Converting '{chan}' into enum: {chanEnum.name}:{chanEnum.value}")
+            except ValueError as e:
+              raise AvrError(f"Unknown Channel {chan}")
+        elif isinstance(chan, Channel):
+            chanEnum=chan
+        else:
+            raise AvrError("Unknown Channel")
+            
+        level = value["level"]
+        channelLevel = self._get_current("SSLEV")
+        if chanEnum not in channelLevel:
+            logging.warning(f"Channel {chanEnum.name} is not available right now.")
+            return
+
+        if channelLevel[chanEnum] != level:
+            level = level + 50  # 50 is 0dB
+            if level < 38:
+                level = 38
+            elif level > 62:
+                level = 62
+            if int(10 * level) % 10:
+                # Needs to be a nultiple of 5
+                level = int(5 * round(10 * level / 5))
+            else:
+                level = int(level)
+
+            cmd = chanEnum.value
+            self.write_queue.put_nowait(("SSLEV", f"{cmd} {level:02}"))    
+
+    def doLock(self,  value: bool) -> None:
+        """Lock or unlock
+        
+        Arguments:
+        value -- True to lock, False to unlock.
+        """
+        
+        self.write_queue.put_nowait(("SSLOC ", _on_off_from_bool(value)))
+        
+    def doStandby (self, value: Union[str, Standby]) -> None:
+        """Select the standby mode."""
+        
+        if isinstance(value, str):
+            try:           
+              modeEnum=Standby(value)
+              # logging.debug(f"Converting '{value}' into enum: {modeEnum.name}:{modeEnum.value}")
+            except ValueError as e:
+              raise AvrError(f"Unknown standby mode {value}")
+        elif isinstance(value, Standby):
+            modeEnum=value
+        else:
+            raise AvrError("Unknown standby mode")
+            
+        self.write_queue.put_nowait(("STBY", modeEnum.value))    
+
+    #xxxxx#            
     
     def notifyme(self, funcCmd: Callable, funcEvent:Callable) -> None:
         """Register a callback for when a command or an event happens.
@@ -830,7 +1152,7 @@ class MDAVR:
         self.rtask.cancel()
         self.wtask.cancel()
         self.ptask.cancel()
-        logging.debug(f"Closed device '{self.name}'")
+        logging.debug(f"Closed device '{self.deviceName}'")
         if self.notifyEvent:
             self.notifyEvent(self, EventAVR.Close, {})        
 
@@ -851,12 +1173,10 @@ class MDAVR:
             await self._writer.drain()
         except asyncio.CancelledError as e:
             return            
-        logging.debug("Write drained")
+        # logging.debug("Write drained")
 
     def _process_response(self, response: str) -> Optional[str]:
-        matches = [cmd for cmd in self.CMDS_DEFS.keys() if response.startswith(cmd)] + [
-            cmd for cmd in EXTRAS if response.startswith(cmd)
-        ]
+        matches = [cmd for cmd in self.CMDS_DEFS.keys() if response.startswith(cmd)] 
 
         if not matches:
             logging.debug(f"!! There is no parser for command {response}")
@@ -867,45 +1187,32 @@ class MDAVR:
         match = matches[0]
 
         if getattr(self, "_parse_" + match, None):
-            #logging.debug(f"Executing _parse_{match}...")
+            # logging.debug(f"Executing _parse_{match}...")
             getattr(self, "_parse_" + match)(response.strip()[len(match) :].strip())
         else:
-            # A few special cases ... for now
-            if response.startswith("SSINFAISFSV"):
-                #logging.debug(f"executing special parsing...")
-                try:
-                    sr = int(only_int(response.split(" ")[-1]))
-                    if sr > 200:
-                        sr = round(sr / 10, 1)
-                    else:
-                        sr = float(sr)
-                    self.status["Sampling Rate"] = sr
-                except Exception as e:
-                    if response.split(" ")[-1] == "NON":
-                        self.status["Sampling Rate"] = "-"
-                    else:
-                        logging.debug(f"Error with sampling rate: {e}")
-            else:
-                #logging.debug(f"_parse_{match} is not defined; executing _parse_many...")
-                self._parse_many(match, response.strip()[len(match) :].strip())
+            # logging.debug(f"_parse_{match} is not defined; executing _parse_many...")
+            self._parse_many(match, response.strip()[len(match) :].strip())
 
         return match
 
     def _parse_many(self, cmd: str, resp: str) -> None:
-        #logging.debug(f"_parse_many({cmd}, {resp}):")
+        # logging.debug(f"_parse_many({cmd}, {resp}):")
         if cmd in self.CMDS_DEFS:
-            for x in self.CMDS_DEFS[cmd].values:
-                if resp == x.value:
-                    #logging.debug(f"found a value: {x.name}:{x.value}")
-                    code = self.CMDS_DEFS[cmd].code
-                    if self.status[code] != x:
-                        self.status[code] = x
-                    if self.notifyCmd:
-                        try:
-                            self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])
-                        except Exception as e:
-                            logging.error('Fatal error when notifyCmd: '+str(e))
-                            logging.info(traceback.format_exc())
+            if self.CMDS_DEFS[cmd].values is None:
+                logging.debug(f"No automatic parser found for command {cmd} {resp}")
+            else:  
+                for x in self.CMDS_DEFS[cmd].values:
+                    if resp == x.value:
+                        # logging.debug(f"found a value: {x.name}:{x.value}")
+                        code = self.CMDS_DEFS[cmd].code
+                        if self.status[code] != x:
+                            self.status[code] = x
+                        if self.notifyCmd:
+                            try:
+                                self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])
+                            except Exception as e:
+                                logging.error('Fatal error when notifyCmd: '+str(e))
+                                logging.info(traceback.format_exc())
         else:
             logging.debug(f"There is no parsing for command {cmd}")
 
@@ -918,9 +1225,15 @@ class MDAVR:
             self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])
 
     def _parse_speaker_level(self, resp, cmd: str) -> None:
-        level = only_int(resp)
+        level=only_int(resp)
         if level:
-            level = int(level) - 50
+            if len(level) > 3:
+                logging.error(f"error when parsing speaker level: level {level} is too big")
+            elif len(level) > 2:
+                level = int(resp) / 10
+            else:
+                level = float(resp)        
+            level -= 50
             code = self.CMDS_DEFS[cmd].code
             if self.status[code] != level:
                 self.status[code] = level
@@ -953,7 +1266,9 @@ class MDAVR:
         level = only_int(resp)
         cmd="MV"
         if level:
-            if len(level) > 2:
+            if len(level) > 3:
+                logging.error(f"error when parsing volume: volume {level} is too big")
+            elif len(level) > 2:
                 level = int(level) / 10
             else:
                 level = float(level)
@@ -1011,7 +1326,9 @@ class MDAVR:
 
         try:            
             level = only_int(resp)
-            if len(level) > 2:
+            if len(level) > 3:
+                logging.error(f"error when parsing speaker level: level {level} is too big")    
+            elif len(level) > 2:
                 level = int(level) / 10
             else:
                 level = float(level)
@@ -1035,14 +1352,47 @@ class MDAVR:
 
     def _parse_Z3(self, resp: str) -> None:
         self._parse_zone("Z3", resp)
+        
+    def _parse_SSLEV(self, resp: str) -> None:
+        #Special as resp is 'spkr code' + space + 'spkr level'
+        cmd="SSLEV"
+        code = self.CMDS_DEFS[cmd].code
+        if resp == "END":
+            self.sslevend = True
+            if self.notifyCmd:
+                if self.status[code]:
+                    logging.debug(f"My Channel level is now {_dict_enum_to_string(self.status[code])}")
+                else:
+                    logging.debug(f"My Channel level is empty")
+                self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])                                        
+        else:        
+            if self.sslevend:
+                self.status[code] = {}
+                self.sslevend = False            
+            spkr, level = resp.split(" ") 
+            if level:
+                if len(level) > 3:
+                    logging.error(f"error when parsing speaker level: level {level} is too big")        
+                elif len(level) > 2:
+                    level = int(level) / 10
+                else:
+                    level = float(level)
+            level -= 50
+            # logging.debug(f"Speaker code {spkr}")
+            try:    
+                spkrEnum=Channel(spkr)
+                # logging.debug(f"Converting '{spkr}' into enum: {spkrEnum.name}:{spkrEnum.value}")
+                self.status[code][spkrEnum] = level
+            except ValueError as e:
+                logging.debug(f"Unknown Channel {spkr}")
 
     def _parse_CV(self, resp: str) -> None:
         """ Different here... Needs to be reset"""
         cmd="CV"
+        code = self.CMDS_DEFS[cmd].code
         if resp == "END":
             self.cvend = True
             if self.notifyCmd:
-                code = self.CMDS_DEFS[cmd].code
                 if self.status[code]:
                     logging.debug(f"My Channel Bias is now {_dict_enum_to_string(self.status[code])}")
                 else:
@@ -1051,31 +1401,29 @@ class MDAVR:
                 
         else:
             if self.cvend:
-                self.status[self.CMDS_DEFS[cmd].code] = {}
+                self.status[code] = {}
                 self.cvend = False
             
             spkr, level = resp.split(" ")
                 
             if level:
+                if len(level) > 3:
+                    logging.error(f"error when parsing biais: level {level} is too big")    
                 if len(level) > 2:
                     level = int(level) / 10
                 else:
                     level = float(level)
             level -= 50
-            
-            spkrEnum=None
-            for x in self.CMDS_DEFS[cmd].values:
-                if x.value == spkr:
-                    spkrEnum = x
-                    break
-            if spkrEnum:
-                self.status[self.CMDS_DEFS[cmd].code][spkrEnum] = level
-            else:
-                logging.debug(f"Unknown speaker code {spkr}")
+            try:
+                spkrEnum=Channel(spkr)
+                # logging.debug(f"Converting '{spkr}' into enum: {spkrEnum.name}:{spkrEnum.value}")
+                self.status[code][spkrEnum] = level
+            except ValueError as e:
+                logging.debug(f"Unknown Channel {spkr}")
 
     def _parse_SSSOD(self, resp: str) -> None:
         """ Different here..."""
-        #logging.debug(f"_parse_SSSOD({resp})")
+        # logging.debug(f"_parse_SSSOD({resp})")
         #GDE BUG correction
         cmd="SSSOD"
         if resp == "END":
@@ -1085,19 +1433,34 @@ class MDAVR:
             logging.debug(f"My source (not used) is now {_list_enum_to_string(self.mysourcesNotUsed)}")
             return
         si, f = resp.split(" ")
-        if f == "USE":
-            for x in self.CMDS_DEFS[cmd].values:
-                if si == x.value:
-                    self.mysources.append(x)
-                    logging.debug(f"Adding source {x}")
-                    break
-        if f == "DEL":
-            for x in self.CMDS_DEFS[cmd].values:
-                if si == x.value:
-                    self.mysourcesNotUsed.append(x)
-                    logging.debug(f"Adding NOT USED source {x}")
-                    break
+        try:
+            x = InputSource(si)
+            # logging.debug(f"Converting '{si}' into enum: {x.name}:{x.value}")
+            if f == "USE":
+                self.mysources.append(x)
+                # logging.debug(f"Adding source {x}")
+            elif f == "DEL":
+                self.mysourcesNotUsed.append(x)
+                # logging.debug(f"Adding NOT USED source {x}")
+        except ValueError as e:
+            logging.debug(f"Unknown source {si}")
 
+    def _parse_SSFUN(self, resp: str) -> None:
+        """ Name of the sources... """
+        cmd="SSFUN" 
+        if resp == "END": 
+            logging.debug(f"The names of each source are {self.sourcesName}")
+            if self.notifyCmd:
+                self.notifyCmd(self, self.CMDS_DEFS[cmd], self.sourcesName)            
+            return
+        si, sourceName = resp.split(" ", 1)
+        try:
+            x = InputSource(si)
+            #logging.debug(f"Converting '{si}' into enum: {x.name}:{x.value}")
+            self.sourcesName[x]=sourceName
+            logging.debug(f"Name of source {x}: '{sourceName}'")
+        except ValueError as e:
+            logging.debug(f"Unknown source {si}")        
 
     def _parse_MS(self, resp: str) -> None:
         """ Different here... What we get is not what we send. So we try to transform
@@ -1127,7 +1490,7 @@ class MDAVR:
               modeEnum=SurroundMode.DtsSurround
             else:
               modeEnum=SurroundMode(resp)
-            logging.debug(f"Converting '{resp}' into enum: {modeEnum.name}:{modeEnum.value}")
+            #logging.debug(f"Converting '{resp}' into enum: {modeEnum.name}:{modeEnum.value}")
         except ValueError as e:
             logging.info(f"Unknown sound mode {resp}")
             return            
@@ -1172,6 +1535,21 @@ class MDAVR:
         #Clear RDS tuner station name
         self._clear_current("TFANNAME") 
         
+    def _parse_DAPTY(self, resp: str) -> None:
+        self._parse_string(resp, "DAPTY")        
+        
+    def _parse_DAENL(self, resp: str) -> None:
+        self._parse_string(resp, "DAENL")        
+        
+    def _parse_DAFRQ(self, resp: str) -> None:
+        self._parse_string(resp, "DAFRQ")        
+
+    def _parse_DAQUA(self, resp: str) -> None:
+        self._parse_int(resp, "DAQUA",0, 100)        
+
+    def _parse_DAINF(self, resp: str) -> None:
+        self._parse_string(resp, "DAINF")        
+
     def _parse_TFANNAME(self, resp: str) -> None:
         self._parse_string(resp, "TFANNAME")
         #Clear RDS tuner station name
@@ -1183,7 +1561,157 @@ class MDAVR:
     def _parse_TMAN(self, resp: str) -> None:
         self._parse_string(resp, "TMAN")
 
+    def _parse_OPTPN(self, resp:str) -> None:
+        cmd="OPTPN"
+        code = self.CMDS_DEFS[cmd].code
         
+        stationId, stationName = resp.split(" ",1)
+        stationId=int(only_int(stationId))
+        stationName = stationName .strip()
+        
+        #Check weird format when multiple OPTPN message are concat
+        try:
+            nextOPTPN = stationName.index(f"OPTPN{(stationId+1):02}")
+            resp = stationName[nextOPTPN+5:]
+            stationName = stationName[:nextOPTPN]
+            self._parse_OPTPN(resp)
+        except ValueError as e:
+            pass
+        
+        logging.debug(f"Station '{stationId}': '{stationName}'")  
+        if self.status[code] is None:
+            self.status[code] = {}
+        self.status[code][stationId]=stationName
+        
+        if stationId>=56 and self.notifyCmd:
+            self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])
+            #pass
+        
+
+    def _parse_R1(self, resp: str) -> None:
+        self._parse_string(resp, "R1")
+
+    def _parse_R2(self, resp: str) -> None:
+        self._parse_string(resp, "R2")
+
+    def _parse_R3(self, resp: str) -> None:
+        self._parse_string(resp, "R3")
+
+    def _parse_SSLAN(self, resp: str) -> None:
+        self._parse_string(resp, "SSLAN")
+
+    def _parse_SPPR(self, resp: str) -> None:
+        self._parse_int(resp, "SPPR", 1, 2)
+
+    def _parse_BTTX(self, resp: str) -> None:
+        cmd="BTTX"
+        code = self.CMDS_DEFS[cmd].code
+        if (self.status[code] is None):
+            self.status[code]={}
+        try:
+            x = BluetoothTransmitter(resp)
+            self.status[code][Bluetooth.Transmitter] = x
+            logging.debug(f"BT Transmitter: {x}")
+        except Exception as e:
+            pass
+        try:
+            x = BluetoothOutputMode(resp)
+            self.status[code][Bluetooth.OutputMode] = x
+            logging.debug(f"BT OutputMode: {x}")
+        except Exception as e:
+            pass       
+        if self.notifyCmd:
+            self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])
+
+    def _parse_PSCLV(self, resp: str) -> None:
+        cmd="SSLEV"
+        code = self.CMDS_DEFS[cmd].code
+        level=only_int(resp)
+        if level:
+            if len(level) > 3:
+                logging.error(f"error when parsing speaker level: level {level} is too big")        
+            elif len(level) > 2:
+                level = int(level) / 10
+            else:
+                level = float(level)
+        level -= 50
+        spkrEnum=Channel.Centre
+        if self.status[code] is None:
+            self.status[code] = {}
+        self.status[code][spkrEnum] = level
+        if self.notifyCmd:
+            if self.status[code]:
+                logging.debug(f"My Channel level is now {_dict_enum_to_string(self.status[code])}")
+            else:
+                logging.debug(f"My Channel level is empty")
+            self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])      
+
+    def _parse_PSSWL(self, resp: str) -> None:
+        cmd="SSLEV"
+        code = self.CMDS_DEFS[cmd].code
+        if resp.startswith("2 "):
+            spkrEnum=Channel.Subwoofer2
+            resp=resp[1:].strip()
+        else:
+            spkrEnum=Channel.Subwoofer
+        level=only_int(resp)
+        if level:
+            if len(level) > 3:
+                logging.error(f"error when parsing speaker level: level {level} is too big")        
+            elif len(level) > 2:
+                level = int(level) / 10
+            else:
+                level = float(level)
+        level -= 50
+        
+        if self.status[code] is None:
+            self.status[code] = {}
+        self.status[code][spkrEnum] = level
+        if self.notifyCmd:
+            if self.status[code]:
+                logging.debug(f"My Channel level is now {_dict_enum_to_string(self.status[code])}")
+            else:
+                logging.debug(f"My Channel level is empty")
+            self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])      
+
+    def _parse_PSHEQ(self, resp: str) -> None:
+        self._parse_control_on_off(resp, "PSHEQ")
+
+    def _parse_PSDYNEQ(self, resp: str) -> None:
+        self._parse_control_on_off(resp, "PSDYNEQ")
+
+    def _parse_PSREFLEV(self, resp: str) -> None:
+        self._parse_int(resp, "PSREFLEV", 0, 99)
+        
+    def _parse_NSFRN(self, resp: str) -> None:
+        self._parse_string(resp, "NSFRN")        
+        
+    def _parse_SSINFFRM(self, resp: str) -> None:
+        cmd="SSINFFRM"
+        code = self.CMDS_DEFS[cmd].code
+        if resp.startswith("END"):
+            return
+        typeMC, resp = resp.split(" ", 1)
+        try:
+            typeMCEnum=MicroCodeType(typeMC)
+            # logging.debug(f"Converting '{typeMC}' into enum: {typeMCEnum.name}:{typeMCEnum.value}")
+        except ValueError as e:
+            logging.debug(f"Unknown type {typeMC}")
+            return
+        resp=resp.replace("_", " ")
+        resp=resp.strip()
+        if self.status[code] is None:
+            self.status[code] = {}
+        self.status[code][typeMCEnum] = resp  
+        if self.notifyCmd:
+            self.notifyCmd(self, self.CMDS_DEFS[cmd], self.status[code])
+           
+    def _parse_SSLOC(self, resp: str) -> None:
+        self._parse_control_on_off(resp, "SSLOC")
+           
+    #xxxxx#
+            
+
     async def _do_read(self):
         """ Keep on reading the info coming from the AVR"""
 
@@ -1220,14 +1748,19 @@ class MDAVR:
                 if cmd:
                     await self._send_command(cmd, param)
                 self.write_queue.task_done()
+                #wait 1s before sending next message. Device is not happy when too fast...
+                await asyncio.sleep(1.0)
             except asyncio.CancelledError as e:
-                return            
+                return
+            except Exception as e:
+                logging.debug("Problem processing write: {} - {}".format(e, data.decode().strip("\r")))
+                logging.debug(traceback.format_exc())                  
 
     async def _do_ping(self):
         """ Send a ping to the AVR every _pingFreq s"""
         while self.alive:
             try:
-                logging.debug("Send ping ...")
+                #logging.debug("Send ping ...")
                 self.write_queue.put_nowait(("PW", "?"))
                 if self.notifyEvent:
                     self.notifyEvent(self, EventAVR.Ping, {})                
