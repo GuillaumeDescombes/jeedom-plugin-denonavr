@@ -124,7 +124,7 @@ class _CommandDef:
         self.zone = zone
 
 class MDAVR:
-    """Connection to a Marantz AVR over Telnet.
+    """Connection to a Denon AVR over Telnet.
 
     Uses `connect` to create a connection to the AVR.
     """

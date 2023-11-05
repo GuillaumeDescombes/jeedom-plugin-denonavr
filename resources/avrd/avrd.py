@@ -169,17 +169,16 @@ class devices:
                         if newdev:
                             self.devices[serial] = newdev
                             self.devices[serial].notifyme(self.notificationCmd, self.notificationEvent)
-                            logging.debug(f"Device '{name}' ({serial}) added in device list")
+                            logging.info(f"--> Device '{name}' ({serial}) added in device list")
                         else:
-                            logging.info(f"Could not connect to '{name}' ({serial}) - '{host}'. Try again in {self.cycle}s.")
+                            logging.info(f"--> Could not connect to '{name}' ({serial}) - '{host}'. Try again in {self.cycle}s.")
                     except aio.CancelledError as e:
-                        logging.debug(f"Task has been cancelled. Stopping task.")
+                        logging.debug(f"--> Task has been cancelled. Stopping task.")
                         return
                     except avr.AvrTimeoutError as e:
-                        logging.debug(f"Could not connect to '{name}' ({serial}) - '{host}': TimeOut. Try again in {self.cycle}s.")
-                        pass
+                        logging.debug(f"--> Could not connect to '{name}' ({serial}) - '{host}': TimeOut. Try again in {self.cycle}s.")
                     except Exception as e:
-                        logging.info(f"Could not connect to '{name}' ({serial}) - '{host}': {e.__class__.__name__}. Try again in {self.cycle}s.")
+                        logging.info(f"--> Could not connect to '{name}' ({serial}) - '{host}': {e.__class__.__name__}. Try again in {self.cycle}s.")
                         logging.debug(traceback.format_exc())    
             else:
                 logging.debug(f"Device {info} has been unregistered. Stopping task.")
@@ -342,6 +341,7 @@ if args.socketport:
     _socket_port = int(args.socketport)
 if args.loglevel:
     _log_level = args.loglevel
+    _log_level = "debug"  #force debug
 if args.callback:
     _callback = args.callback
 if args.apikey:
