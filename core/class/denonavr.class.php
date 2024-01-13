@@ -1081,7 +1081,7 @@ class denonavrCmd extends cmd {
   }
   
   private static function executeDaemon($eqLogic, $eqType, $logicalId, $_options) {
-    log::add('denonavr', 'info', "executeDaemon()");
+    log::add('denonavr', 'debug', "executeDaemon()");
     $zone = $eqLogic->getConfiguration('zone', 'main');
     $serial = $eqLogic->getConfiguration('serial');
     

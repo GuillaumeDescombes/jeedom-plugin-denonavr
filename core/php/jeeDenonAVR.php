@@ -86,21 +86,36 @@ if (isset($result['devices'])) {
           if ($valueCmd['value']!="Ping") log::add('denonavr', 'info', "Callback - message from device '" . $serial . "', zone '" . $zone . "': event = '" . $valueCmd['value'] ."'");   
           switch ($valueCmd['value']) {
             case "Close":
-              $eqlogic->checkAndUpdateCmd('power_state', 0);
-              $eqlogic->checkAndUpdateCmd('station_name', "");
+              if ($eqlogic != null) {
+                $eqlogic->checkAndUpdateCmd('power_state', 0);
+                $eqlogic->checkAndUpdateCmd('station_name', "");
+              }
               break;
           }
-        } else {
+          if ($eqlogic != null) {
+            $eqlogic->checkAndUpdateCmd('lastEvent', $valueCmd['value'] );
+          }
+        } elseif ($cmd=='lastMessageDate') {
+            //lastMessageDate
+            log::add('denonavr', 'debug', "Callback - last message or event from device '" . $serial . "': ".$valueCmd['value']);
+            if ($eqlogic != null) {
+              $eqlogic->checkAndUpdateCmd('lastMessage', $valueCmd['value'] );
+            }
+          } else {
             //cmd
             $label=$valueCmd['cmdLabel'];
-            log::add('denonavr', 'info', "Callback - message from device '" . $serial . "', zone '" . $zone ."': '" . $label . "' (" . $cmd . ")= '" . print_r($valueCmd['value'], true) ."'");  
+            if ($zone == "UNDEFINED") {
+              log::add('denonavr', 'info', "Callback - message from device '" . $serial . "': '" . $label . "' (" . $cmd . ")= '" . print_r($valueCmd['value'], true) ."'");
+            } else {
+                log::add('denonavr', 'info', "Callback - message from device '" . $serial . "', zone '" . $zone ."': '" . $label . "' (" . $cmd . ")= '" . print_r($valueCmd['value'], true) ."'");  
+              }
             if ($eqlogic != null) {            
-              log::add('denonavr', 'info'," --> eqlogic associated with message is found: " . $eqlogic->getId());
+              log::add('denonavr', 'debug'," --> eqlogic associated with message is found: " . $eqlogic->getId());
               switch ($label) {
                 case "Main Power":
                   if ($zone == "UNDEFINED") {
                     $eqlogic->checkAndUpdateCmd('power_state', ($valueCmd['value'] == 'ON') ? 1 : 0);
-                    log::add('denonavr', 'info', " --> power_state is set to '" . (($valueCmd['value'] == 'ON') ? "1" : "0") ."'");  
+                    log::add('denonavr', 'debug', " --> power_state is set to '" . (($valueCmd['value'] == 'ON') ? "1" : "0") ."'");  
                   }
                   break;
                 case "Power":

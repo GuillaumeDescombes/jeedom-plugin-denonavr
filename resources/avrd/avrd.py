@@ -57,6 +57,7 @@ class devices:
         self.notifyEvent = None
         self.shutDown = False
         self.cycle = cycle
+        self.lastCmd = 0
 
     def register(self, info):
         if "serial" in info and "name" in info and ("ip" in info or "host" in info):
@@ -144,17 +145,18 @@ class devices:
                     valueConv={x:value[x] for x in value}                
         else:
             valueConv=value
-
         if commandDef.zone != avrEnums.Zone.UndefinedZone:
             logging.debug(f"notificationCmd -> {AVR.deviceName}: Value for '{commandDef.label}' ({commandDef.code}) in zone '{commandDef.zone.value}' changed to '{valueConv}'")
             jeedomCom.add_changes(f"devices::{AVR.serial}::{commandDef.zone.value}::{commandDef.code}", {'avrName': AVR.deviceName, 'avrSerial': AVR.serial, 'cmdCode': commandDef.code, 'cmdLabel': commandDef.label, 'zone': commandDef.zone.value, 'value': valueConv});
         else:  
             logging.debug(f"notificationCmd -> {AVR.deviceName}: Value for '{commandDef.label}' ({commandDef.code}) changed to '{valueConv}'")
             jeedomCom.add_changes(f"devices::{AVR.serial}::{commandDef.zone.value}::{commandDef.code}", {'avrName': AVR.deviceName, 'avrSerial': AVR.serial, 'cmdCode': commandDef.code, 'cmdLabel': commandDef.label, 'value': valueConv});
-
+        jeedomCom.add_changes(f"devices::{AVR.serial}::{avrEnums.Zone.UndefinedZone.value}::lastMessageDate", {'avrName': AVR.deviceName, 'avrSerial': AVR.serial, 'value':time.strftime("%d/%m/%Y %H:%M:%S")});
+        
     def notificationEvent(self, AVR, event, value):
         logging.debug(f"notificationEvent -> {AVR.deviceName}: Event '{event.value}'")
         jeedomCom.add_changes(f"devices::{AVR.serial}::{avrEnums.Zone.UndefinedZone.value}::event", {'avrName': AVR.deviceName, 'avrSerial': AVR.serial, 'value' : event.value});
+        jeedomCom.add_changes(f"devices::{AVR.serial}::{avrEnums.Zone.UndefinedZone.value}::lastMessageDate", {'avrName': AVR.deviceName, 'avrSerial': AVR.serial, 'value':time.strftime("%d/%m/%Y %H:%M:%S")});
             
     async def setDevice(self, serial: str, name: str, host:str):
         while not self.shutDown:
@@ -341,7 +343,7 @@ if args.socketport:
     _socket_port = int(args.socketport)
 if args.loglevel:
     _log_level = args.loglevel
-    _log_level = "debug"  #force debug
+#    _log_level = "debug"  #force debug
 if args.callback:
     _callback = args.callback
 if args.apikey:
