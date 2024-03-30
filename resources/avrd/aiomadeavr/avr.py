@@ -1148,20 +1148,24 @@ class MDAVR:
        
     def close(self):
         self.alive = False
+        logging.info(f"Closing device '{self.deviceName}'")
         self._writer.close()
         self.rtask.cancel()
         self.wtask.cancel()
         self.ptask.cancel()
-        logging.debug(f"Closed device '{self.deviceName}'")
+        logging.info(f"|-> Closed device '{self.deviceName}'")
         if self.notifyEvent:
             self.notifyEvent(self, EventAVR.Close, {})        
 
     def timeout(self) -> bool:
-        logging.debug(f"Timeout #{self._timeoutCnt}...")
-        if self.notifyEvent:
-            self.notifyEvent(self, EventAVR.TimeOut, {})
-        self.close()
-        return True
+        self._timeoutCnt=self._timeoutCnt+1
+        logging.info(f"Timeout #{self._timeoutCnt} for device '{self.deviceName}'")
+        if self._timeoutCnt>=1:
+            if self.notifyEvent:
+                self.notifyEvent(self, EventAVR.TimeOut, {})
+            self.close()
+            return True
+        return False
 
     # API ends here
 
@@ -1169,11 +1173,8 @@ class MDAVR:
         tosend = f"{cmd}{val}\r"
         logging.debug(f"Sending {tosend}")
         self._writer.write(tosend.encode())
-        try:
-            await self._writer.drain()
-        except asyncio.CancelledError as e:
-            return            
-        # logging.debug("Write drained")
+        await self._writer.drain()
+        logging.debug("|-> Write drained")
 
     def _process_response(self, response: str) -> Optional[str]:
         matches = [cmd for cmd in self.CMDS_DEFS.keys() if response.startswith(cmd)] 
@@ -1724,8 +1725,10 @@ class MDAVR:
                         break
                     data += char
             except asyncio.CancelledError as e:
-                return            
-
+                # log the cancellation
+                logging.info(f'Reading task was cancelled, details: {asyncio.current_task()}')
+                # re-raise the exception
+                raise
             if data == b"":
                 # Gone
                 self.close()
@@ -1738,6 +1741,7 @@ class MDAVR:
             except Exception as e:
                 logging.debug("Problem processing response: {} - {}".format(e, data.decode().strip("\r")))
                 logging.debug(traceback.format_exc())
+        logging.info(f'Reading task is done')
 
     async def _do_write(self):
         """ Keep on reading the info coming from the AVR"""
@@ -1751,10 +1755,14 @@ class MDAVR:
                 #wait 1s before sending next message. Device is not happy when too fast...
                 await asyncio.sleep(1.0)
             except asyncio.CancelledError as e:
-                return
+                # log the cancellation
+                logging.info(f'Writing task was cancelled, details: {asyncio.current_task()}')
+                # re-raise the exception
+                raise
             except Exception as e:
                 logging.debug("Problem processing write: {} - {}".format(e, data.decode().strip("\r")))
-                logging.debug(traceback.format_exc())                  
+                logging.debug(traceback.format_exc())
+        logging.info(f'Writing task is done')
 
     async def _do_ping(self):
         """ Send a ping to the AVR every _pingFreq s"""
@@ -1767,17 +1775,18 @@ class MDAVR:
                 await asyncio.sleep(self._timeout)
                 #check timeout
                 delayLastMessage = time.time() - self._lastMessageTime
-                logging.debug(f"Last message received {delayLastMessage:.2f}s ago")
+                logging.debug(f"Ping: Last message received {delayLastMessage:.2f}s ago")
                 if delayLastMessage>self._timeout:
-                    self._timeoutCnt=self._timeoutCnt+1
-                    if self.timeout():
-                        return
+                    self.timeout()
                 else:
                     self._timeoutCnt=0 
                 await asyncio.sleep(self._pingFreq - self._timeout)                    
             except asyncio.CancelledError as e:
-                return
+                # log the cancellation
+                logging.info(f'Pinging task was cancelled, details: {asyncio.current_task()}')
+                # re-raise the exception
+                raise
             except Exception as e:
                 logging.debug("Problem processing ping: {} - {}".format(e, e.__class__.__name__))  
                 logging.debug(traceback.format_exc())     
-  
+        logging.info(f'Pinging task is done')

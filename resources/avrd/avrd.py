@@ -75,7 +75,7 @@ class devices:
     def unregister(self, serial:str):
         serial=serial.lower()
         if serial in self.deviceTasks:
-            logging.info(f"Unregistering 'Unknwon' ({serial}) in task list")
+            logging.info(f"Unregistering 'Unknown' ({serial}) in task list")
             name="Unknown"
             if serial in self.devices:
               name = self.devices[serial].deviceName
@@ -83,7 +83,9 @@ class devices:
               self.devices[serial].close()
               del self.devices[serial]      
             #cancel task
+            logging.info(f"Cancelling Register task {self.deviceTasks[serial].current_task()})")
             self.deviceTasks[serial].cancel()            
+            logging.info(f"|-> Status of task {self.deviceTasks[serial].cancelled()}")
             del self.deviceTasks[serial]
             #send event to jeedom
             jeedomCom.add_changes(f"devices::{serial}::{avrEnums.Zone.UndefinedZone.value}::event", {'avrName': name, 'avrSerial': serial, 'value' : 'unregister'});
@@ -165,6 +167,9 @@ class devices:
                     ## all right; device is alive
                     logging.debug(f"Device '{name}' ({serial}) - '{host}' is alive")
                 else:
+                    if serial in self.devices and not self.devices[serial].alive:
+                        logging.info(f"Device '{name}' ({serial}) - '{host}' is NOT alive. Destroying it.")
+                        del(self.devices[serial])
                     logging.debug(f"Try to add '{name}' ({serial}) - '{host}' in device list")
                     try:
                         newdev = await avr.avr_factory(serial, host)
@@ -173,23 +178,17 @@ class devices:
                             self.devices[serial].notifyme(self.notificationCmd, self.notificationEvent)
                             logging.info(f"--> Device '{name}' ({serial}) added in device list")
                         else:
-                            logging.info(f"--> Could not connect to '{name}' ({serial}) - '{host}'. Try again in {self.cycle}s.")
-                    except aio.CancelledError as e:
-                        logging.debug(f"--> Task has been cancelled. Stopping task.")
-                        return
+                            logging.debug(f"--> Could not connect to '{name}' ({serial}) - '{host}'. Try again in {self.cycle}s.")
                     except avr.AvrTimeoutError as e:
                         logging.debug(f"--> Could not connect to '{name}' ({serial}) - '{host}': TimeOut. Try again in {self.cycle}s.")
                     except Exception as e:
                         logging.info(f"--> Could not connect to '{name}' ({serial}) - '{host}': {e.__class__.__name__}. Try again in {self.cycle}s.")
                         logging.debug(traceback.format_exc())    
             else:
-                logging.debug(f"Device {info} has been unregistered. Stopping task.")
+                logging.info(f"Device {info} has been unregistered. Stopping task.")
                 return
-            try:    
-                await aio.sleep(self.cycle)
-            except aio.CancelledError as e:
-                logging.debug(f"Task has been cancelled. Stopping task.")
-                return    
+            await aio.sleep(self.cycle)
+        logging.info(f"SetDevice task is done.")
             
     def stop(self):
         for dev in self.devices.values():
@@ -246,21 +245,13 @@ async def main():
     logging.debug("Start listening...")
     jeedomSocket.open()
     jeedomCom.send_change_immediate({"daemon": {'event' : 'Listening'}})
-    #jeedomCom.add_changes("daemon", {'event' : 'Listening'})
-    try:
-        await aio.sleep(5)
-    except aio.CancelledError as e:
-        return
-  
+    await aio.sleep(5)
     #listInfo = {"name":"my Denon", "ip":"192.168.128.188", "serial":"1234"}
     #MyDevices.register(listInfo)
   
     cpt=0
     while True:
-        try:
-            await aio.sleep(_cycle)
-        except aio.CancelledError as e:
-            return            
+        await aio.sleep(_cycle)
         try:
             if not JEEDOM_SOCKET_MESSAGE.empty():
                 logging.debug("Message received in socket JEEDOM_SOCKET_MESSAGE")
@@ -296,10 +287,8 @@ async def main():
                             value=message['value']
                         MyDevices.doAction(serial, deviceAction, zone, value)
                     
-        except aio.CancelledError as e:
-            return            
         except Exception as e:
-            logging.error('Fatal error: '+str(e))
+            logging.error(f'Fatal error: {e}')
             logging.info(traceback.format_exc())
         if (_watchDogTimer > 0 and cpt % round(_watchDogTimer / _cycle) == 0):
             jeedomCom.add_changes("daemon", {'event' : 'Ping'});
@@ -359,7 +348,7 @@ if args.watchDogTimer:
 
 jeedom_utils.set_log_level(_log_level)
 
-logging.info('Start avrd')
+print(f'Start avrd')
 logging.info('Log level: '+str(_log_level))
 logging.info('PID file: '+str(_pidfile))
 logging.info('Apikey: '+str(_apikey))
