@@ -17,21 +17,19 @@
  */
 require_once dirname(__FILE__) . "/../../../../core/php/core.inc.php";
 
-//$apikey = jeedom::getApiKey('denonavr');
-
 if (!jeedom::apiAccess(init('apikey'), 'denonavr')) {
-	echo __('Vous n\'etes pas autorisé à effectuer cette action', __FILE__);
-  log::add('denonavr', 'info', "wrong API key");
-	die();
+  echo __('Vous n\'etes pas autorisé à effectuer cette action', __FILE__);
+  log::add('denonavr', 'info', "Callback - wrong API key");
+  die();
 }
 if (init('test') != '') {
-	echo 'OK';
-	die();
+  echo 'OK';
+  die();
 }
 
 $result = json_decode(file_get_contents("php://input"), true);
 if (!is_array($result)) {
-	die();
+  die();
 }
 
 log::add('denonavr', 'debug',"Callback call from daemon...");
@@ -41,7 +39,7 @@ if (isset($result['daemon'])) {
   
   //event
   if (isset($result['daemon']['event'])) {
-    if ($result['daemon']['event']!="Ping") log::add('denonavr', 'info', "Callback - message from daemon: event = '" . $result['daemon']['event'] . "'");
+    if ($result['daemon']['event']!="Ping") log::add('denonavr', 'debug', "Callback - message from daemon: event = '" . $result['daemon']['event'] . "'");
     if ($result['daemon']['event']=='Listening') {
       // register all the eqLogics
       $devices=array();
@@ -105,7 +103,8 @@ if (isset($result['devices'])) {
             //cmd
             $label=$valueCmd['cmdLabel'];
             if ($zone == "UNDEFINED") {
-              log::add('denonavr', 'info', "Callback - message from device '" . $serial . "': '" . $label . "' (" . $cmd . ")= '" . print_r($valueCmd['value'], true) ."'");
+              if ($cmd!="PW") log::add('denonavr', 'info', "Callback - message from device '" . $serial . "': '" . $label . "' (" . $cmd . ")= '" . print_r($valueCmd['value'], true) ."'");
+                else log::add('denonavr', 'debug', "Callback - message from device '" . $serial . "': '" . $label . "' (" . $cmd . ")= '" . print_r($valueCmd['value'], true) ."'");
             } else {
                 log::add('denonavr', 'info', "Callback - message from device '" . $serial . "', zone '" . $zone ."': '" . $label . "' (" . $cmd . ")= '" . print_r($valueCmd['value'], true) ."'");  
               }
