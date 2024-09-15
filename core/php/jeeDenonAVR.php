@@ -19,6 +19,7 @@ require_once dirname(__FILE__) . "/../../../../core/php/core.inc.php";
 
 if (!jeedom::apiAccess(init('apikey'), 'denonavr')) {
   echo __('Vous n\'etes pas autorisé à effectuer cette action', __FILE__);
+  echo ("\n");
   log::add('denonavr', 'info', "Callback - wrong API key");
   die();
 }
@@ -109,7 +110,8 @@ if (isset($result['devices'])) {
                 log::add('denonavr', 'info', "Callback - message from device '" . $serial . "', zone '" . $zone ."': '" . $label . "' (" . $cmd . ")= '" . print_r($valueCmd['value'], true) ."'");  
               }
             if ($eqlogic != null) {            
-              log::add('denonavr', 'debug'," --> eqlogic associated with message is found: " . $eqlogic->getId());
+              log::add('denonavr', 'debug', " --> eqlogic associated with message is found: " . $eqlogic->getId());
+              log::add('denonavr', 'debug', " --> label: '" . $label ."'");
               switch ($label) {
                 case "Main Power":
                   if ($zone == "UNDEFINED") {
@@ -157,6 +159,21 @@ if (isset($result['devices'])) {
                   $eqlogic->checkAndUpdateCmd('preset', $preset);
                   log::add('denonavr', 'info', " --> preset is set to '$preset'");  
                   break;                        
+                case "Tuner Station List":
+                  $stationList=$valueCmd['value'];
+                  $eqlogic->setTunerStationList($stationList);
+                  log::add('denonavr', 'info', " --> configuration 'TunerStationList' is set to '" . json_encode($eqlogic->getTunerStationList()) ."'");
+                  break;
+                case "Tuner Quality":
+                  $quality=$valueCmd['value'];
+                  $eqlogic->checkAndUpdateCmd('tuner_quality', $quality);
+                  log::add('denonavr', 'info', " --> tuner quality is set to '$quality'");
+                  break;
+                case "Dynamic Volume":
+                  $dyn=$valueCmd['value']=="ON";
+                  $eqlogic->checkAndUpdateCmd('dynamic_volume', $dyn);
+                  log::add('denonavr', 'info', " --> dynamic volume is set to '". ($dyn?"true":"false") ."'");
+                  break;
               }
             }
           }

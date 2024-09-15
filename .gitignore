@@ -4,3 +4,4 @@ deployment-config.json
 .remote-sync.json
 __pycache__
 \!old
+*.bak

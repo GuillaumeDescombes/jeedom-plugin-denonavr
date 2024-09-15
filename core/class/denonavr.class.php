@@ -20,38 +20,38 @@
 require_once dirname(__FILE__) . '/../../../../core/php/core.inc.php';
 
 class denonavr extends eqLogic {
-	/*     * *************************Attributs****************************** */
-	
-	
-	/*     * ***********************Methode static*************************** */
+  /*     * *************************Attributs****************************** */
+  
+  
+  /*     * ***********************Methode static*************************** */
 
-	public static function deamon_info() {
-		$return = array();
-		$return['log'] = 'denonavrd';
-		$return['state'] = 'nok';
-		$pid_file = jeedom::getTmpFolder('denonavr') . '/deamon.pid';
-		if (file_exists($pid_file)) {
-			if (@posix_getsid(trim(file_get_contents($pid_file)))) {
-				$return['state'] = 'ok';
-			} else {
-				shell_exec(system::getCmdSudo() . 'rm -rf ' . $pid_file . ' 2>&1 > /dev/null');
-			}
-		}
-		$return['launchable'] = 'ok';
-		return $return;
-	}
-	
-	public static function dependancy_info() {
-		$return = array();
+  public static function deamon_info() {
+    $return = array();
+    $return['log'] = 'denonavrd';
+    $return['state'] = 'nok';
+    $pid_file = jeedom::getTmpFolder('denonavr') . '/deamon.pid';
+    if (file_exists($pid_file)) {
+      if (@posix_getsid(trim(file_get_contents($pid_file)))) {
+        $return['state'] = 'ok';
+      } else {
+        shell_exec(system::getCmdSudo() . 'rm -rf ' . $pid_file . ' 2>&1 > /dev/null');
+      }
+    }
+    $return['launchable'] = 'ok';
+    return $return;
+  }
+  
+  public static function dependancy_info() {
+    $return = array();
     $return['log'] = 'denonavr_update';
-		$return['progress_file'] = jeedom::getTmpFolder('denonavr') . '/dependance';
+    $return['progress_file'] = jeedom::getTmpFolder('denonavr') . '/dependance';
     $return['state'] = (self::compilationOk()) ? 'ok' : 'nok';
-		return $return;
-	}
-	public static function dependancy_install() {
-		log::remove('denonavr_update');
-		return array('script' => __DIR__ . '/../../resources/install_#stype#.sh ' . jeedom::getTmpFolder('denonavr') . '/dependance', 'log' => log::getPathToLog('denonavr_update'));
-	}
+    return $return;
+  }
+  public static function dependancy_install() {
+    log::remove('denonavr_update');
+    return array('script' => __DIR__ . '/../../resources/install_#stype#.sh ' . jeedom::getTmpFolder('denonavr') . '/dependance', 'log' => log::getPathToLog('denonavr_update'));
+  }
   
   public static function compilationOk() {
     if (exec(system::getCmdSudo() . system::get('cmd_check') . '-E "python3\-request|python3\-pyudev" | wc -l') <2) {
@@ -59,61 +59,61 @@ class denonavr extends eqLogic {
     }      
     return true;
   }  
-	
-	public static function deamon_start() {
-		self::deamon_stop();
-		$deamon_info = self::deamon_info();
-		if ($deamon_info['launchable'] != 'ok') {
-			throw new Exception(__('Veuillez vérifier la configuration', __FILE__));
-		}
+  
+  public static function deamon_start() {
+    self::deamon_stop();
+    $deamon_info = self::deamon_info();
+    if ($deamon_info['launchable'] != 'ok') {
+      throw new Exception(__('Veuillez vérifier la configuration', __FILE__));
+    }
 
-		$demonavr_path = realpath(__DIR__ . '/../../resources/avrd');
-		$cmd = '/usr/bin/python3 ' . $demonavr_path . '/avrd.py';
-		$cmd .= ' --loglevel ' . log::convertLogLevel(log::getLogLevel('denonavr'));
-		$cmd .= ' --socketport ' . config::byKey('socketport', 'denonavr');
-		$cmd .= ' --cycle ' . config::byKey('cycle', 'denonavr');
-		$cmd .= ' --callback ' . network::getNetworkAccess('internal', 'proto:127.0.0.1:port:comp') . '/plugins/denonavr/core/php/jeeDenonAVR.php';
-		$cmd .= ' --apikey ' . jeedom::getApiKey('denonavr');
-		$cmd .= ' --pid ' . jeedom::getTmpFolder('denonavr') . '/deamon.pid';
-		log::add('denonavr', 'info', 'Lancement démon denonavr : ' . $cmd);
-		$result = exec($cmd . ' >> ' . log::getPathToLog('denonavrd') . ' 2>&1 &');
-		$i = 0;
-		while ($i < 30) {
-			$deamon_info = self::deamon_info();
-			if ($deamon_info['state'] == 'ok') {
-				break;
-			}
-			sleep(1);
-			$i++;
-		}
-		if ($i >= 30) {
-			log::add('denonavr', 'error', 'Impossible de lancer le démon denonavr, vérifiez le port', 'unableStartDeamon');
-			return false;
-		}
-		message::removeAll('denonavr', 'unableStartDeamon');
-		return true;
-	}
-	
-	public static function deamon_stop() {
-		$pid_file = jeedom::getTmpFolder('denonavr') . '/deamon.pid';
-		if (file_exists($pid_file)) {
-			$pid = intval(trim(file_get_contents($pid_file)));
-			system::kill($pid);
-		}
-		system::kill('avrd.py');
-		system::fuserk(config::byKey('socketport', 'denonavr'));
-		sleep(1);
-	}	
+    $demonavr_path = realpath(__DIR__ . '/../../resources/avrd');
+    $cmd = '/usr/bin/python3 ' . $demonavr_path . '/avrd.py';
+    $cmd .= ' --loglevel ' . log::convertLogLevel(log::getLogLevel('denonavr'));
+    $cmd .= ' --socketport ' . config::byKey('socketport', 'denonavr');
+    $cmd .= ' --cycle ' . config::byKey('cycle', 'denonavr');
+    $cmd .= ' --callback ' . network::getNetworkAccess('internal', 'proto:127.0.0.1:port:comp') . '/plugins/denonavr/core/php/jeeDenonAVR.php';
+    $cmd .= ' --apikey ' . jeedom::getApiKey('denonavr');
+    $cmd .= ' --pid ' . jeedom::getTmpFolder('denonavr') . '/deamon.pid';
+    log::add('denonavr', 'info', 'Lancement démon denonavr : ' . $cmd);
+    $result = exec($cmd . ' >> ' . log::getPathToLog('denonavrd') . ' 2>&1 &');
+    $i = 0;
+    while ($i < 30) {
+      $deamon_info = self::deamon_info();
+      if ($deamon_info['state'] == 'ok') {
+        break;
+      }
+      sleep(1);
+      $i++;
+    }
+    if ($i >= 30) {
+      log::add('denonavr', 'error', 'Impossible de lancer le démon denonavr, vérifiez le port', 'unableStartDeamon');
+      return false;
+    }
+    message::removeAll('denonavr', 'unableStartDeamon');
+    return true;
+  }
+  
+  public static function deamon_stop() {
+    $pid_file = jeedom::getTmpFolder('denonavr') . '/deamon.pid';
+    if (file_exists($pid_file)) {
+      $pid = intval(trim(file_get_contents($pid_file)));
+      system::kill($pid);
+    }
+    system::kill('avrd.py');
+    system::fuserk(config::byKey('socketport', 'denonavr'));
+    sleep(1);
+  }  
   
   public static function request($_action, $_data = null) {
     $paramDefault = array('apikey' => jeedom::getApiKey('denonavr'));
     if ($_data == null) $_data=array();
     
     $value = json_encode(array_merge($paramDefault, array('action' => $_action), $_data));
-		$socket = socket_create(AF_INET, SOCK_STREAM, 0);
- 		socket_connect($socket, '127.0.0.1', config::byKey('socketport', 'denonavr'));
-		socket_write($socket, $value, strlen($value));
-		socket_close($socket);
+    $socket = socket_create(AF_INET, SOCK_STREAM, 0);
+    socket_connect($socket, '127.0.0.1', config::byKey('socketport', 'denonavr'));
+    socket_write($socket, $value, strlen($value));
+    socket_close($socket);
     
     log::add('denonavr', 'debug', "Call deamon: ". $value);
     return true;
@@ -129,13 +129,13 @@ class denonavr extends eqLogic {
   public static function cron5() {
   }
   */
-	public static function cron15() {
-		foreach (eqLogic::byType('denonavr', true) as $eqLogic) {
+  public static function cron15() {
+    foreach (eqLogic::byType('denonavr', true) as $eqLogic) {
       if ($eqLogic->getConfiguration('enableDaemon') == 0) {
-			  $eqLogic->updateInfo();
+        $eqLogic->updateInfo();
       }
-		}
-	}
+    }
+  }
 
   /*
   public static function cronHourly() {
@@ -179,38 +179,38 @@ class denonavr extends eqLogic {
     return $data;
   }
   
-	static public function _getAmpInfo($ip, $zone) {
+  static public function _getAmpInfo($ip, $zone) {
     log::add('denonavr', 'debug', 'getAmpInfo()');
-	   
-	  if ($zone == 2) {
-	    $zoneHtml = '?ZoneName=ZONE2';
-	  } elseif ($zone == 3) {
+     
+    if ($zone == 2) {
+      $zoneHtml = '?ZoneName=ZONE2';
+    } elseif ($zone == 3) {
         $zoneHtml = '?ZoneName=ZONE3';
       } else $zoneHtml ='';
       
     $url = 'http://' . $ip . ':' . config::byKey('apiport_standard', 'denonavr') . '/goform/formMainZone_MainZoneXml.xml' . $zoneHtml;
-	  $request_http = new com_http($url);
+    $request_http = new com_http($url);
     $result="";
-	  try {
+    try {
       $result = trim($request_http->exec(config::byKey('timeout', 'denonavr'), 1));
-	  } catch (Exception $e) {
-	      $result='';
-	    }
+    } catch (Exception $e) {
+        $result='';
+      }
     $data=false;
     if (strpos($result, "Error 403") === false) { 
-	    $xml = simplexml_load_string($result);
-   	  $data = json_decode(json_encode($xml), true);
-	    $data['VideoSelectLists'] = array();
-	    if (is_array($xml->VideoSelectLists->value)) {
-			  foreach ($xml->VideoSelectLists->value as $VideoSelectList) {
-				  $data['VideoSelectLists'][(string) $VideoSelectList["index"]] = (string) $VideoSelectList;
-			  }
-	    }
-	    foreach ($data as $key => $value) {
-			  if (isset($value['value'])) {
-				  $data[$key] = $value['value'];
-			  }
-	    }
+      $xml = simplexml_load_string($result);
+       $data = json_decode(json_encode($xml), true);
+      $data['VideoSelectLists'] = array();
+      if (is_array($xml->VideoSelectLists->value)) {
+        foreach ($xml->VideoSelectLists->value as $VideoSelectList) {
+          $data['VideoSelectLists'][(string) $VideoSelectList["index"]] = (string) $VideoSelectList;
+        }
+      }
+      foreach ($data as $key => $value) {
+        if (isset($value['value'])) {
+          $data[$key] = $value['value'];
+        }
+      }
     } else {
         log::add('denonavr', 'debug', " - error 403");
       }
@@ -218,8 +218,8 @@ class denonavr extends eqLogic {
     $jsonString = json_encode($data);
     log::add('denonavr', 'debug', " - data: " . $jsonString);
 
-	  return $data;
-	}
+    return $data;
+  }
   
   static public function _getAmpInfoLightHEOS($ip, $zone) {
     log::add('denonavr', 'debug', 'getAmpInfoLightHEOS()');
@@ -305,13 +305,13 @@ class denonavr extends eqLogic {
     return floatval($volumeRel)+config::byKey('absolute_volume_offset', 'denonavr');
   }
   
-	
-	/*     * *********************Méthodes d'instance************************* */
-	
+  
+  /*     * *********************Méthodes d'instance************************* */
+  
   /*
-	public function preInsert() {
-		//$this->setCategory('multimedia', 1);
-	}
+  public function preInsert() {
+    //$this->setCategory('multimedia', 1);
+  }
   */
 
   /*  
@@ -319,12 +319,12 @@ class denonavr extends eqLogic {
         
   }
   */  
-	
-	public function preUpdate() {
-		if ($this->getConfiguration('ip') == '') {
-			throw new Exception(__('Le champs IP ne peut etre vide', __FILE__));
-		}
-	}
+  
+  public function preUpdate() {
+    if ($this->getConfiguration('ip') == '') {
+      throw new Exception(__('Le champs IP ne peut etre vide', __FILE__));
+    }
+  }
   
   /*
   public function postUpdate() {
@@ -349,8 +349,8 @@ class denonavr extends eqLogic {
         
   }
   */  
-	
-	public function postSave() {
+  
+  public function postSave() {
     //IP Change -> recreate commands
     if ($this->getConfiguration('applyIP') != $this->getConfiguration('ip')) {
       $this->applyModuleConfiguration();
@@ -388,7 +388,7 @@ class denonavr extends eqLogic {
           $this->save();
         }
       }
-	}
+  }
 
   public function applyModuleConfiguration() {
     log::add('denonavr', 'info', 'applyModuleConfiguration()');
@@ -399,332 +399,332 @@ class denonavr extends eqLogic {
     $order=1;
     
     //REFRESH
-		$cmd = $this->getCmd(null, 'refresh');
-		if (!is_object($cmd)) {
+    $cmd = $this->getCmd(null, 'refresh');
+    if (!is_object($cmd)) {
       log::add('denonavr', 'info', " - creating 'refresh'");      
-			$cmd = new denonavrCmd();
-			$cmd->setLogicalId('refresh');
-		}
-		$cmd->setName(__('Rafraîchir', __FILE__));
-		$cmd->setIsVisible(1);    
-		$cmd->setType('action');
-		$cmd->setSubType('other');
+      $cmd = new denonavrCmd();
+      $cmd->setLogicalId('refresh');
+    }
+    $cmd->setName(__('Rafraîchir', __FILE__));
+    $cmd->setIsVisible(1);    
+    $cmd->setType('action');
+    $cmd->setSubType('other');
     $cmd->setConfiguration('eqType', "other");
-		$cmd->setEqLogic_id($this->getId());
+    $cmd->setEqLogic_id($this->getId());
     $cmd->setOrder($order++);
-		$cmd->save();    
+    $cmd->save();    
     
     //POWER
     $cmd = $this->getCmd(null, 'power_state');
-		if (!is_object($cmd)) {
+    if (!is_object($cmd)) {
       log::add('denonavr', 'info', " - creating 'power_state'");
-			$cmd = new denonavrCmd();
-			$cmd->setLogicalId('power_state');
-		}
+      $cmd = new denonavrCmd();
+      $cmd->setLogicalId('power_state');
+    }
     $cmd->setIsVisible(0);
     $cmd->setName(__('Etat', __FILE__));
-		$cmd->setType('info');
-		$cmd->setSubType('binary');
-		$cmd->setEqLogic_id($this->getId());
+    $cmd->setType('info');
+    $cmd->setSubType('binary');
+    $cmd->setEqLogic_id($this->getId());
     $cmd->setConfiguration('eqType', "power");
-		$cmd->setDisplay('generic_type', 'MEDIA_STATE');
+    $cmd->setDisplay('generic_type', 'MEDIA_STATE');
     $cmd->setOrder($order++);
-		$cmd->save();
-		$power_state_id = $cmd->getId();
+    $cmd->save();
+    $power_state_id = $cmd->getId();
 
-		$cmd = $this->getCmd(null, 'on');
-		if (!is_object($cmd)) {
+    $cmd = $this->getCmd(null, 'on');
+    if (!is_object($cmd)) {
       log::add('denonavr', 'info', " - creating 'on'");      
-			$cmd = new denonavrCmd();
-			$cmd->setLogicalId('on');
-		}
-		$cmd->setName(__('On', __FILE__));    
-		$cmd->setIsVisible(1);
-		$cmd->setTemplate('dashboard', 'prise');
-		$cmd->setTemplate('mobile', 'prise');    
-		$cmd->setType('action');
-		$cmd->setSubType('other');
+      $cmd = new denonavrCmd();
+      $cmd->setLogicalId('on');
+    }
+    $cmd->setName(__('On', __FILE__));    
+    $cmd->setIsVisible(1);
+    $cmd->setTemplate('dashboard', 'prise');
+    $cmd->setTemplate('mobile', 'prise');    
+    $cmd->setType('action');
+    $cmd->setSubType('other');
     $cmd->setConfiguration('eqType', "power");
-		$cmd->setEqLogic_id($this->getId());
-		$cmd->setDisplay('generic_type', 'MEDIA_ON');
-		$cmd->setValue($power_state_id);
+    $cmd->setEqLogic_id($this->getId());
+    $cmd->setDisplay('generic_type', 'MEDIA_ON');
+    $cmd->setValue($power_state_id);
     $cmd->setOrder($order++);
-		$cmd->save();
-		
-		$cmd = $this->getCmd(null, 'off');
-		if (!is_object($cmd)) {
+    $cmd->save();
+    
+    $cmd = $this->getCmd(null, 'off');
+    if (!is_object($cmd)) {
       log::add('denonavr', 'info', " - creating 'off'");      
-			$cmd = new denonavrCmd();
-			$cmd->setLogicalId('off');
-		}
-		$cmd->setName(__('Off', __FILE__));
-		$cmd->setIsVisible(1);
-		$cmd->setTemplate('dashboard', 'prise');
-		$cmd->setTemplate('mobile', 'prise');    
-		$cmd->setType('action');
-		$cmd->setSubType('other');
+      $cmd = new denonavrCmd();
+      $cmd->setLogicalId('off');
+    }
+    $cmd->setName(__('Off', __FILE__));
+    $cmd->setIsVisible(1);
+    $cmd->setTemplate('dashboard', 'prise');
+    $cmd->setTemplate('mobile', 'prise');    
+    $cmd->setType('action');
+    $cmd->setSubType('other');
     $cmd->setConfiguration('eqType', "power");
-		$cmd->setEqLogic_id($this->getId());
-		$cmd->setDisplay('generic_type', 'MEDIA_OFF');
-		$cmd->setValue($power_state_id);
+    $cmd->setEqLogic_id($this->getId());
+    $cmd->setDisplay('generic_type', 'MEDIA_OFF');
+    $cmd->setValue($power_state_id);
     $cmd->setOrder($order++);
-		$cmd->save();    
+    $cmd->save();    
     
     // MUTE
     $cmd = $this->getCmd(null, 'mute_state');
-		if (!is_object($cmd)) {
+    if (!is_object($cmd)) {
       log::add('denonavr', 'info', " - creating 'mute_state'");
-			$cmd = new denonavrCmd();
-			$cmd->setLogicalId('mute_state');
-		}
+      $cmd = new denonavrCmd();
+      $cmd->setLogicalId('mute_state');
+    }
     $cmd->setIsVisible(0);
     $cmd->setName(__('Muet', __FILE__));
-		$cmd->setType('info');
-		$cmd->setSubType('binary');
-		$cmd->setEqLogic_id($this->getId());
+    $cmd->setType('info');
+    $cmd->setSubType('binary');
+    $cmd->setEqLogic_id($this->getId());
     $cmd->setConfiguration('eqType', "volume");
-		$cmd->setDisplay('generic_type', 'MEDIA_STATE');
+    $cmd->setDisplay('generic_type', 'MEDIA_STATE');
     $cmd->setOrder($order++);
-		$cmd->save();
-		$mute_state_id = $cmd->getId();    
+    $cmd->save();
+    $mute_state_id = $cmd->getId();    
     
-		$cmd = $this->getCmd(null, 'mute_on');
-		if (!is_object($cmd)) {
+    $cmd = $this->getCmd(null, 'mute_on');
+    if (!is_object($cmd)) {
       log::add('denonavr', 'info', " - creating 'mute_on'");      
-			$cmd = new denonavrCmd();
-			$cmd->setLogicalId('mute_on');   
-		}
-		$cmd->setName(__('Muet On', __FILE__));
-		$cmd->setIsVisible(1);
-		$cmd->setTemplate('dashboard', 'circle');
-		$cmd->setTemplate('mobile', 'circle');       
-		$cmd->setType('action');
-		$cmd->setSubType('other');
+      $cmd = new denonavrCmd();
+      $cmd->setLogicalId('mute_on');   
+    }
+    $cmd->setName(__('Muet On', __FILE__));
+    $cmd->setIsVisible(1);
+    $cmd->setTemplate('dashboard', 'circle');
+    $cmd->setTemplate('mobile', 'circle');       
+    $cmd->setType('action');
+    $cmd->setSubType('other');
     $cmd->setConfiguration('eqType', "volume");
-		$cmd->setEqLogic_id($this->getId());
+    $cmd->setEqLogic_id($this->getId());
     $cmd->setDisplay('generic_type', 'MEDIA_MUTE');
     $cmd->setValue($mute_state_id);
     $cmd->setOrder($order++);
-		$cmd->save();
+    $cmd->save();
     
-		$cmd = $this->getCmd(null, 'mute_off');
-		if (!is_object($cmd)) {
+    $cmd = $this->getCmd(null, 'mute_off');
+    if (!is_object($cmd)) {
       log::add('denonavr', 'info', " - creating 'mute_off'");      
-			$cmd = new denonavrCmd();
-			$cmd->setLogicalId('mute_off'); 
-		}
-		$cmd->setName(__('Muet Off', __FILE__));
-		$cmd->setIsVisible(1);
-		$cmd->setTemplate('dashboard', 'circle');
-		$cmd->setTemplate('mobile', 'circle');         
-		$cmd->setType('action');
-		$cmd->setSubType('other');
+      $cmd = new denonavrCmd();
+      $cmd->setLogicalId('mute_off'); 
+    }
+    $cmd->setName(__('Muet Off', __FILE__));
+    $cmd->setIsVisible(1);
+    $cmd->setTemplate('dashboard', 'circle');
+    $cmd->setTemplate('mobile', 'circle');         
+    $cmd->setType('action');
+    $cmd->setSubType('other');
     $cmd->setConfiguration('eqType', "volume");
-		$cmd->setEqLogic_id($this->getId());
+    $cmd->setEqLogic_id($this->getId());
     $cmd->setDisplay('generic_type', 'MEDIA_UNMUTE');
     $cmd->setValue($mute_state_id);
     $cmd->setOrder($order++);
-		$cmd->save();  
+    $cmd->save();  
     
     //VOLUME
-		$cmd = $this->getCmd(null, 'volume');
-		if (!is_object($cmd)) {
+    $cmd = $this->getCmd(null, 'volume');
+    if (!is_object($cmd)) {
       log::add('denonavr', 'info', " - creating 'volume'");      
-			$cmd = new denonavrCmd();
-			$cmd->setLogicalId('volume');
-		}
-		$cmd->setIsVisible(0);
-		$cmd->setName(__('Valeur Volume', __FILE__));
+      $cmd = new denonavrCmd();
+      $cmd->setLogicalId('volume');
+    }
+    $cmd->setIsVisible(0);
+    $cmd->setName(__('Valeur Volume', __FILE__));
     $cmd->setType('info');
-		$cmd->setSubType('numeric');
-		$cmd->setEqLogic_id($this->getId());
+    $cmd->setSubType('numeric');
+    $cmd->setEqLogic_id($this->getId());
     $cmd->setConfiguration('eqType', "volume");
-		$cmd->setUnite('%');
-		$cmd->setDisplay('generic_type', 'VOLUME');
+    $cmd->setUnite('%');
+    $cmd->setDisplay('generic_type', 'VOLUME');
     $cmd->setOrder($order++);
-		$cmd->save();
-		$volume_id = $cmd->getId();    
+    $cmd->save();
+    $volume_id = $cmd->getId();    
     
     $cmd = $this->getCmd(null, 'volume_set');
-		if (!is_object($cmd)) {
+    if (!is_object($cmd)) {
       log::add('denonavr', 'info', " - creating 'volume_set'");      
-			$cmd = new denonavrCmd();
-			$cmd->setLogicalId('volume_set');
+      $cmd = new denonavrCmd();
+      $cmd->setLogicalId('volume_set');
 
-		}
-		$cmd->setName(__('Niveau Volume', __FILE__));
-		$cmd->setIsVisible(1);
+    }
+    $cmd->setName(__('Niveau Volume', __FILE__));
+    $cmd->setIsVisible(1);
     $cmd->setType('action');
-		$cmd->setSubType('slider');
-		$cmd->setConfiguration('minValue', config::byKey('min_volume', 'denonavr'));
-		$cmd->setConfiguration('maxValue', config::byKey('max_volume', 'denonavr'));
+    $cmd->setSubType('slider');
+    $cmd->setConfiguration('minValue', config::byKey('min_volume', 'denonavr'));
+    $cmd->setConfiguration('maxValue', config::byKey('max_volume', 'denonavr'));
     $cmd->setConfiguration('eqType', "volume");
     $cmd->setDisplay('generic_type', 'SET_VOLUME');
-		$cmd->setValue($volume_id);
-		$cmd->setEqLogic_id($this->getId());
+    $cmd->setValue($volume_id);
+    $cmd->setEqLogic_id($this->getId());
     $cmd->setOrder($order++);
-		$cmd->save();
+    $cmd->save();
     
-		
-		$cmd = $this->getCmd(null, 'input');
-		if (!is_object($cmd)) {
+    
+    $cmd = $this->getCmd(null, 'input');
+    if (!is_object($cmd)) {
       log::add('denonavr', 'info', " - creating 'input'");
-			$cmd = new denonavrCmd();
-			$cmd->setLogicalId('input');
-		}
+      $cmd = new denonavrCmd();
+      $cmd->setLogicalId('input');
+    }
     $cmd->setIsVisible((config::byKey('source_action', 'denonavr') == 'select' ? 0:1));
     $cmd->setName(__('Valeur Source', __FILE__));
-		$cmd->setType('info');
-		$cmd->setSubType('string');
-		$cmd->setEqLogic_id($this->getId());
+    $cmd->setType('info');
+    $cmd->setSubType('string');
+    $cmd->setEqLogic_id($this->getId());
     $cmd->setConfiguration('eqType', "input");
-		$cmd->setDisplay('generic_type', 'GENERIC');
+    $cmd->setDisplay('generic_type', 'GENERIC');
     $cmd->setOrder($order++);
-		$cmd->save();
+    $cmd->save();
     $input_id = $cmd->getId();     
-	  
-		//INPUT
-		if ($this->getConfiguration('ip') != '') {
+    
+    //INPUT
+    if ($this->getConfiguration('ip') != '') {
       if ($this->getConfiguration('mode') == '') {
 
-		    $convert = array('3' => '2', '8' => '2', '9' => '2', '6' => '5', '11' => '5', '12' => '5', '13' => '5');
-		    $inputModel = array(
-			   '1' => array(
-				  'SAT/CBL' => 'CBL/SAT',
-  				'DVD' => 'DVD/Blu-ray',
-	  			'BD' => 'Blu-ray',
-		  		'GAME' => 'Game',
-			  	'AUX1' => 'AUX',
-  				'MPLAY' => 'Media Player',
-	  			'USB/IPOD' => 'iPod/USB',
-		  		'TV' => 'TV Audio',
-			  	'TUNER' => 'Tuner',
-  				'NETHOME' => 'Online Music',
-	  			'BT' => 'Bluetooth',
-		  		'IRP' => 'Internet Radio',
-  			 ),
-	  		 '7' => array(
-		  		'SAT/CBL' => 'CBL/SAT',
-			  	'DVD' => 'DVD/Blu-ray',
-  				'GAME' => 'Game',
-	  			'AUX1' => 'AUX',
-		  		'MPLAY' => 'Media Player',
-			  	'USB/IPOD' => 'iPod/USB',
-  				'TV' => 'TV Audio',
-	  			'TUNER' => 'Tuner',
-		  		'NETHOME' => 'Online Music',
-				  'BT' => 'Bluetooth',
-  				'IRP' => 'Internet Radio',
-	  			'CD' => 'CD',
-		  	 ),
-  			 '2' => array(
-	  			'SAT/CBL' => 'CBL/SAT',
-		  		'DVD' => 'DVD/Blu-ray',
-			  	'BD' => 'Blu-ray',
-  				'GAME' => 'Game',
-	  			'AUX1' => 'AUX1',
-		  		'AUX2' => 'AUX2',
-				  'MPLAY' => 'Media Player',
-  				'USB/IPOD' => 'iPod/USB',
-	  			'TV' => 'TV Audio',
-				  'TUNER' => 'Tuner',
-  				'NETHOME' => 'Online Music',
-	  			'BT' => 'Bluetooth',
-		  		'IRP' => 'Internet Radio',
-			  	'CD' => 'CD',
-				  'SERVER' => 'Media Server',
-  			 ),
-	  		 '10' => array(
-		  		'SAT/CBL' => 'CBL/SAT',
-			  	'DVD' => 'DVD/Blu-ray',
-  				'BD' => 'Blu-ray',
-	  			'GAME' => 'Game',
-		  		'AUX1' => 'AUX1',
-			  	'AUX2' => 'AUX2',
-				  'MPLAY' => 'Media Player',
-  				'USB/IPOD' => 'iPod/USB',
-	  			'TV' => 'TV Audio',
-		  		'TUNER' => 'Tuner',
-			  	'NETHOME' => 'Online Music',
-				  'BT' => 'Bluetooth',
-  				'IRP' => 'Internet Radio',
-	  			'CD' => 'CD',
-		  		'PHONO' => 'Phono',
-			   ),
-			   '4' => array(
-  				'SAT/CBL' => 'CBL/SAT',
-	  			'DVD' => 'DVD/Blu-ray',
-		  		'BD' => 'Blu-ray',
-			  	'GAME' => 'Game',
-				  'AUX1' => 'AUX1',
-  				'AUX2' => 'AUX2',
-	  			'MPLAY' => 'Media Player',
-		  		'USB/IPOD' => 'iPod/USB',
-			  	'TV' => 'TV Audio',
-				  'TUNER' => 'Tuner',
-				  'NETHOME' => 'Online Music',
-  				'BT' => 'Bluetooth',
-	  			'IRP' => 'Internet Radio',
-		  		'CD' => 'CD',
-			  	'PHONO' => 'Phono',
-			   ),
-  			 '5' => array(
-	  			'SAT/CBL' => 'CBL/SAT',
-		  		'DVD' => 'DVD/Blu-ray',
-			  	'BD' => 'Blu-ray',
-  				'GAME' => 'Game',
-	  			'AUX1' => 'AUX1',
-		   		'AUX2' => 'AUX2',
-				  'MPLAY' => 'Media Player',
-  				'USB/IPOD' => 'iPod/USB',
-	  			'TV' => 'TV Audio',
-		  		'NETHOME' => 'Online Music',
-			  	'BT' => 'Bluetooth',
-				  'IRP' => 'Internet Radio',
-  				'CD' => 'CD',
-	  			'PHONO' => 'Phono',
-		  	 ),
-		    );        
+        $convert = array('3' => '2', '8' => '2', '9' => '2', '6' => '5', '11' => '5', '12' => '5', '13' => '5');
+        $inputModel = array(
+         '1' => array(
+          'SAT/CBL' => 'CBL/SAT',
+          'DVD' => 'DVD/Blu-ray',
+          'BD' => 'Blu-ray',
+          'GAME' => 'Game',
+          'AUX1' => 'AUX',
+          'MPLAY' => 'Media Player',
+          'USB/IPOD' => 'iPod/USB',
+          'TV' => 'TV Audio',
+          'TUNER' => 'Tuner',
+          'NETHOME' => 'Online Music',
+          'BT' => 'Bluetooth',
+          'IRP' => 'Internet Radio',
+         ),
+         '7' => array(
+          'SAT/CBL' => 'CBL/SAT',
+          'DVD' => 'DVD/Blu-ray',
+          'GAME' => 'Game',
+          'AUX1' => 'AUX',
+          'MPLAY' => 'Media Player',
+          'USB/IPOD' => 'iPod/USB',
+          'TV' => 'TV Audio',
+          'TUNER' => 'Tuner',
+          'NETHOME' => 'Online Music',
+          'BT' => 'Bluetooth',
+          'IRP' => 'Internet Radio',
+          'CD' => 'CD',
+         ),
+         '2' => array(
+          'SAT/CBL' => 'CBL/SAT',
+          'DVD' => 'DVD/Blu-ray',
+          'BD' => 'Blu-ray',
+          'GAME' => 'Game',
+          'AUX1' => 'AUX1',
+          'AUX2' => 'AUX2',
+          'MPLAY' => 'Media Player',
+          'USB/IPOD' => 'iPod/USB',
+          'TV' => 'TV Audio',
+          'TUNER' => 'Tuner',
+          'NETHOME' => 'Online Music',
+          'BT' => 'Bluetooth',
+          'IRP' => 'Internet Radio',
+          'CD' => 'CD',
+          'SERVER' => 'Media Server',
+         ),
+         '10' => array(
+          'SAT/CBL' => 'CBL/SAT',
+          'DVD' => 'DVD/Blu-ray',
+          'BD' => 'Blu-ray',
+          'GAME' => 'Game',
+          'AUX1' => 'AUX1',
+          'AUX2' => 'AUX2',
+          'MPLAY' => 'Media Player',
+          'USB/IPOD' => 'iPod/USB',
+          'TV' => 'TV Audio',
+          'TUNER' => 'Tuner',
+          'NETHOME' => 'Online Music',
+          'BT' => 'Bluetooth',
+          'IRP' => 'Internet Radio',
+          'CD' => 'CD',
+          'PHONO' => 'Phono',
+         ),
+         '4' => array(
+          'SAT/CBL' => 'CBL/SAT',
+          'DVD' => 'DVD/Blu-ray',
+          'BD' => 'Blu-ray',
+          'GAME' => 'Game',
+          'AUX1' => 'AUX1',
+          'AUX2' => 'AUX2',
+          'MPLAY' => 'Media Player',
+          'USB/IPOD' => 'iPod/USB',
+          'TV' => 'TV Audio',
+          'TUNER' => 'Tuner',
+          'NETHOME' => 'Online Music',
+          'BT' => 'Bluetooth',
+          'IRP' => 'Internet Radio',
+          'CD' => 'CD',
+          'PHONO' => 'Phono',
+         ),
+         '5' => array(
+          'SAT/CBL' => 'CBL/SAT',
+          'DVD' => 'DVD/Blu-ray',
+          'BD' => 'Blu-ray',
+          'GAME' => 'Game',
+          'AUX1' => 'AUX1',
+           'AUX2' => 'AUX2',
+          'MPLAY' => 'Media Player',
+          'USB/IPOD' => 'iPod/USB',
+          'TV' => 'TV Audio',
+          'NETHOME' => 'Online Music',
+          'BT' => 'Bluetooth',
+          'IRP' => 'Internet Radio',
+          'CD' => 'CD',
+          'PHONO' => 'Phono',
+         ),
+        );        
         $model='1';
         try {
-    			$infos = $this->getAmpInfo();
+          $infos = $this->getAmpInfo();
           $model = $infos['ModelId'];
         } catch (Exception $e) {
           }  
-			  if (isset($convert[$model])) {
-  				$model = $convert[$model];
-	  		}
-		  	if (isset($inputModel[$model])) {
+        if (isset($convert[$model])) {
+          $model = $convert[$model];
+        }
+        if (isset($inputModel[$model])) {
           $inputNames = $inputModel[$model];
           if ($zone!="main") $inputNames["SOURCE"] = "Source Principale";
           $this->setConfiguration('inputNames', $inputNames);
-			  	foreach ($inputNames as $key => $value) {
-				  	$cmd = $this->getCmd(null, $key);
-  					if (!is_object($cmd)) {
+          foreach ($inputNames as $key => $value) {
+            $cmd = $this->getCmd(null, $key);
+            if (!is_object($cmd)) {
               log::add('denonavr', 'info', " - creating '" . $key . "'");
-		  				$cmd = new denonavrCmd();
-			  			$cmd->setLogicalId($key);
-					  }
-				  	$cmd->setName(__($value, __FILE__));
-					  $cmd->setIsVisible(1);            
-					  $cmd->setType('action');
-					  $cmd->setSubType('other');
+              $cmd = new denonavrCmd();
+              $cmd->setLogicalId($key);
+            }
+            $cmd->setName(__($value, __FILE__));
+            $cmd->setIsVisible(1);            
+            $cmd->setType('action');
+            $cmd->setSubType('other');
             $cmd->setConfiguration('eqType', "input");
-					  $cmd->setEqLogic_id($this->getId());
+            $cmd->setEqLogic_id($this->getId());
             $cmd->setOrder($order++);
-					  $cmd->save();
-				  }
-			  } else {
+            $cmd->save();
+          }
+        } else {
           $this->setConfiguration('inputNames', array());
         }
       } elseif ($this->getConfiguration('mode') == 'H') {
-  		    $inputConverted = array(
+          $inputConverted = array(
           //INPUT NAME => INPUT ID
-  				  'CBL/SAT' => 'SAT/CBL',
-	    			'BLU-RAY' => 'BD',
-		    		'TV AUDIO' => 'TV',
-    				'MEDIA PLAYER' => 'MPLAY',
-	  			  'BLUETOOTH' => 'BT'
+            'CBL/SAT' => 'SAT/CBL',
+            'BLU-RAY' => 'BD',
+            'TV AUDIO' => 'TV',
+            'MEDIA PLAYER' => 'MPLAY',
+            'BLUETOOTH' => 'BT'
           );
         
           try {
@@ -801,21 +801,21 @@ class denonavr extends eqLogic {
     }
     
     //SURROUND
-		$cmd = $this->getCmd(null, 'surround');
-		if (!is_object($cmd)) {
+    $cmd = $this->getCmd(null, 'surround');
+    if (!is_object($cmd)) {
       log::add('denonavr', 'info', " - creating 'surround'");
-			$cmd = new denonavrCmd();
-			$cmd->setLogicalId('surround');
-		}
-		$cmd->setIsVisible(0);
-		$cmd->setName(__('Valeur Surround', __FILE__));
+      $cmd = new denonavrCmd();
+      $cmd->setLogicalId('surround');
+    }
+    $cmd->setIsVisible(0);
+    $cmd->setName(__('Valeur Surround', __FILE__));
     $cmd->setType('info');
-		$cmd->setSubType('string');
-		$cmd->setEqLogic_id($this->getId());
+    $cmd->setSubType('string');
+    $cmd->setEqLogic_id($this->getId());
     $cmd->setConfiguration('eqType', "sound");
-		$cmd->setDisplay('generic_type', 'GENERIC');
+    $cmd->setDisplay('generic_type', 'GENERIC');
     $cmd->setOrder($order++);
-		$cmd->save();
+    $cmd->save();
     $surround_id = $cmd->getId();
     
     $surroundNames=array(
@@ -925,42 +925,42 @@ class denonavr extends eqLogic {
     $this->updateInfo();
   }
 
-	public function getAmpInfo() {
+  public function getAmpInfo() {
     return denonavr::_getAmpInfo($this->getConfiguration('ip'), $this->getConfiguration('zone', 'main'));
   }
-	
-	public function getAmpInfoAllHEOS() {
+  
+  public function getAmpInfoAllHEOS() {
     return denonavr::_getAmpInfoAllHEOS($this->getConfiguration('ip'), $this->getConfiguration('zone', 'main'));
   }
 
-	public function getAmpInfoLightHEOS() {
+  public function getAmpInfoLightHEOS() {
     return denonavr::_getAmpInfoLightHEOS($this->getConfiguration('ip'), $this->getConfiguration('zone', 'main'));
   }
 
-	public function getAmpInfoHEOS($settings = "all") {
+  public function getAmpInfoHEOS($settings = "all") {
     return denonavr::_getAmpInfoHEOS($settings, $this->getConfiguration('ip'), $this->getConfiguration('zone', 'main'));
   }
-	
-	public function updateInfo() {
+  
+  public function updateInfo() {
     log::add('denonavr', 'debug', "updateInfo()");
-	  if ($this->getConfiguration('ip') == '') {
-	    return;
+    if ($this->getConfiguration('ip') == '') {
+      return;
     }
     
     if ($this->getConfiguration('mode') == '') {
-	    $infos = $this->getAmpInfo();
-	    if (isset($infos['ZonePower'])) {
-	      $this->checkAndUpdateCmd('power_state', ($infos['ZonePower'] == 'OFF') ? 0 : 1);
-	    } else $this->checkAndUpdateCmd('power_state', 0);
-	    if (isset($infos['InputFuncSelect'])) {
-	      $this->checkAndUpdateCmd('input', $infos['InputFuncSelect']);
-	    }
-	    if (isset($infos['MasterVolume'])) {
-	      $this->checkAndUpdateCmd('volume', $infos['MasterVolume']);
-	    }
-	    if (isset($infos['selectSurround'])) {
+      $infos = $this->getAmpInfo();
+      if (isset($infos['ZonePower'])) {
+        $this->checkAndUpdateCmd('power_state', ($infos['ZonePower'] == 'OFF') ? 0 : 1);
+      } else $this->checkAndUpdateCmd('power_state', 0);
+      if (isset($infos['InputFuncSelect'])) {
+        $this->checkAndUpdateCmd('input', $infos['InputFuncSelect']);
+      }
+      if (isset($infos['MasterVolume'])) {
+        $this->checkAndUpdateCmd('volume', $infos['MasterVolume']);
+      }
+      if (isset($infos['selectSurround'])) {
         $this->checkAndUpdateCmd('surround', $infos['selectSurround']);
-	    }
+      }
     } elseif ($this->getConfiguration('mode') == 'H') {
         $infos = $this->getAmpInfoLightHEOS();
         if (isset($infos['Power'])) {
@@ -977,62 +977,71 @@ class denonavr extends eqLogic {
         if (isset($infos['GetSurroundModeStatus']['surround'])) {
           $this->checkAndUpdateCmd('surround', trim($infos['GetSurroundModeStatus']['surround']));
         }
-				$infos = $this->getAmpInfoAllHEOS();
-				log::add('denonavr', 'info', "AmpInfoAllHEOS: ".print_r($infos, true)); 
+        $infos = $this->getAmpInfoAllHEOS();
+        log::add('denonavr', 'info', "AmpInfoAllHEOS: ".print_r($infos, true)); 
         
       }
-	}
+  }
+
+ public function getTunerStationList() {
+    $tunerStationList = $this->getConfiguration('tunerStationList', array());
+    return $tunerStationList;
+ }
+
+ public function setTunerStationList($aList) {
+    $this->setConfiguration('tunerStationList', $aList);
+ }
   
-	
-	/*     * **********************Getteur Setteur*************************** */
+  
+  /*     * **********************Getteur Setteur*************************** */
 }
 
 class denonavrCmd extends cmd {
-	/*     * *************************Attributs****************************** */
-	
-	/*     * ***********************Methode static*************************** */
+  /*     * *************************Attributs****************************** */
+  
+  /*     * ***********************Methode static*************************** */
 
   private static function executeHeosMode($eqLogic, $eqType, $logicalId, $_options) {
     log::add('denonavr', 'info', "executeHeosMode()");
     $baseUrl='http://' . $eqLogic->getConfiguration('ip') . ':' . config::byKey('apiport_heos', 'denonavr') . '/goform/formiPhoneAppDirect.xml?';        
     $request_http=null;
     if ($eqType =="power") {
-		  if ($logicalId == 'on') {
-		    $request_http = new com_http($baseUrl . 'ZMON');
-		  }
+      if ($logicalId == 'on') {
+        $request_http = new com_http($baseUrl . 'ZMON');
+      }
       if ($logicalId == 'off') {
-		    $request_http = new com_http($baseUrl . 'ZMOFF');
+        $request_http = new com_http($baseUrl . 'ZMOFF');
       }
     } 
     if ($eqType == "volume") {
-		  if ($logicalId == 'volume_set') {
+      if ($logicalId == 'volume_set') {
         //converting to absolute
         $volume = $_options['slider'] + config::byKey('absolute_volume_offset', 'denonavr');
         if ($volume<10) $volume = '0' . $volume;
           else $volume = '' . $volume;  
         if ($eqLogic->getConfiguration('zone', 'main') != 'main') $zone = 'Z' . $eqLogic->getConfiguration('zone', 'main');
           else $zone = 'MV';              
-		    $request_http = new com_http($baseUrl . $zone . $volume);
-		  }
+        $request_http = new com_http($baseUrl . $zone . $volume);
+      }
       if ($logicalId == 'mute_on') {
         if ($eqLogic->getConfiguration('zone', 'main') != 'main') $zone = 'Z' . $eqLogic->getConfiguration('zone', 'main');
-		      else $zone = '';                            
+          else $zone = '';                            
         $url = $baseUrl . $zone . "MUON";
-			  $request_http = new com_http($url);
-			}
+        $request_http = new com_http($url);
+      }
       if ($logicalId == 'mute_off') {
         if ($eqLogic->getConfiguration('zone', 'main') != 'main') $zone = 'Z' . $eqLogic->getConfiguration('zone', 'main');
-		      else $zone = '';                            
+          else $zone = '';                            
         $url = $baseUrl . $zone . "MUOFF";
-			  $request_http = new com_http($url);
-			}      
+        $request_http = new com_http($url);
+      }      
     }
     if ($eqType == "input") { // input 
       if ($logicalId!="input") { // mode button
         log::add('denonavr', 'debug', " - SELECT INPUT: " . $logicalId);
         $baseUrl='http://' . $eqLogic->getConfiguration('ip') . ':' . config::byKey('apiport_heos', 'denonavr') . '/goform/formiPhoneAppDirect.xml?'; 
         if ($eqLogic->getConfiguration('zone', 'main') != 'main') $zone = 'Z' . $eqLogic->getConfiguration('zone', 'main');
-		      else $zone = 'SI';              
+          else $zone = 'SI';              
         $url = $baseUrl . $zone . $logicalId; 
         $request_http = new com_http($url);
       } else { // mode SelectBox
@@ -1052,24 +1061,24 @@ class denonavrCmd extends cmd {
   private static function executeStandardMode($eqLogic, $eqType, $logicalId, $_options) {
     log::add('denonavr', 'info', "executeStandardMode()");
     $zone = '';
-		if ($eqLogic->getConfiguration('zone', 'main') == 2) {
-		 $zone = '&ZoneName=ZONE2';
-		}      
+    if ($eqLogic->getConfiguration('zone', 'main') == 2) {
+     $zone = '&ZoneName=ZONE2';
+    }      
     $baseUrl='http://' . $eqLogic->getConfiguration('ip') . ':' . config::byKey('apiport_standard', 'denonavr') . '/MainZone/index.put.asp?';
     log::add('denonavr', 'debug', " - baseURL: " . $baseUrl);
     
     $request_http=null;
-		if ($logicalId == 'on') {
-		  $request_http = new com_http($baseUrl . 'cmd0=PutZone_OnOff%2FON' . $zone);
-		} elseif ($logicalId == 'off') {
-			  $request_http = new com_http($baseUrl . 'cmd0=PutZone_OnOff%2FOFF' . $zone);
-		  } elseif ($logicalId == 'volume_set') {
-			    $request_http = new com_http($baseUrl . '?cmd0=PutMasterVolumeSet%2F' . $_options['slider'] . $zone);
-		    } elseif ($logicalId == 'mute_on' || $logicalId == 'mute_off') {
-			      $request_http = new com_http($baseUrl . 'cmd0=PutVolumeMute/TOGGLE');
-		      } else { // input 
-			        $request_http = new com_http($baseUrl . 'cmd0=PutZone_InputFunction%2F' . $logicalId . $zone);
-		       	}
+    if ($logicalId == 'on') {
+      $request_http = new com_http($baseUrl . 'cmd0=PutZone_OnOff%2FON' . $zone);
+    } elseif ($logicalId == 'off') {
+        $request_http = new com_http($baseUrl . 'cmd0=PutZone_OnOff%2FOFF' . $zone);
+      } elseif ($logicalId == 'volume_set') {
+          $request_http = new com_http($baseUrl . '?cmd0=PutMasterVolumeSet%2F' . $_options['slider'] . $zone);
+        } elseif ($logicalId == 'mute_on' || $logicalId == 'mute_off') {
+            $request_http = new com_http($baseUrl . 'cmd0=PutVolumeMute/TOGGLE');
+          } else { // input 
+              $request_http = new com_http($baseUrl . 'cmd0=PutZone_InputFunction%2F' . $logicalId . $zone);
+             }
     if ($request_http!=null) {
       log::add('denonavr', 'debug', " - url: " . $request_http->getUrl());
       $request_http->exec(60);
@@ -1176,13 +1185,13 @@ class denonavrCmd extends cmd {
     if (!$executed) log::add('denonavr', 'info', " - nothing to do!");
     return $executed;
   }
-	
-	/*     * *********************Methode d'instance************************* */
-	
   
-	public function execute($_options = array()) {
+  /*     * *********************Methode d'instance************************* */
+  
+  
+  public function execute($_options = array()) {
     log::add('denonavr', 'debug', "execute()");
-		
+    
     $eqLogic = $this->getEqLogic();    
     $logicalId=$this->getLogicalId();
     $eqType=$this->getConfiguration('eqType');
@@ -1198,17 +1207,17 @@ class denonavrCmd extends cmd {
       if ($logicalId == "refresh") {
         $eqLogic->updateInfo();
       }      
-		  if ($eqLogic->getConfiguration('mode') == 'H') {
+      if ($eqLogic->getConfiguration('mode') == 'H') {
         if (self::executeHeosMode($eqLogic, $eqType, $logicalId, $_options)) {
-		      sleep(1);
-		      $eqLogic->updateInfo();      
+          sleep(1);
+          $eqLogic->updateInfo();      
         }
-		  } elseif ($eqLogic->getConfiguration('mode') == '') {
+      } elseif ($eqLogic->getConfiguration('mode') == '') {
           if (self::executeStandardMode($eqLogic, $eqType, $logicalId, $_options)) {
-		        sleep(1);
-		        $eqLogic->updateInfo();
+            sleep(1);
+            $eqLogic->updateInfo();
           }
-  		  }
+        }
     }
     
     //Mode with deamon
@@ -1219,15 +1228,15 @@ class denonavrCmd extends cmd {
           $eqLogic->updateInfo();
         } elseif (self::executeHeosMode($eqLogic, $eqType, $logicalId, $_options)) {
           sleep(1);
-		      $eqLogic->updateInfo();
+          $eqLogic->updateInfo();
         }
       }
     }
 
     return true;
-	}
-	
-	/*     * **********************Getteur Setteur*************************** */
+  }
+  
+  /*     * **********************Getteur Setteur*************************** */
 }
 
 ?>
