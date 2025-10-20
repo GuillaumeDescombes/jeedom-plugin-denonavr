@@ -1,0 +1,9 @@
+{
+  "apt": {
+  },
+  "pip3": {
+    "requests": {},
+    "pyserial": {},
+    "aiohttp": {}
+  }
+}
